@@ -1,0 +1,23 @@
+defaults:
+  - ../base
+
+model:
+  name: esfpnet
+  model_type: b2
+  num_classes: 1
+  pretrained_path: weights/mit_b2.pth
+
+training:
+  epochs: 200
+  batch_size: 8
+  loss: structure
+  optimizer:
+    name: adam
+    lr: 1.0e-4
+    weight_decay: 1.0e-5
+  scheduler:
+    name: cosine
+    min_lr: 1.0e-6
+
+logging:
+  run_name: esfpnet_b2_kvasir
