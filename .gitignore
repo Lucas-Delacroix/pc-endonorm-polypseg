@@ -156,6 +156,18 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+upstream/data/
+upstream/vendor/*
+!upstream/vendor/esfpnet/
+!upstream/vendor/esfpnet/**
+upstream/vendor/esfpnet/**/__pycache__/
+upstream/vendor/esfpnet/**/*.py[codz]
+upstream/vendor/esfpnet/*.ipynb
+upstream/vendor/esfpnet/eval/
+upstream/vendor/esfpnet/Figures/
+upstream/vendor/esfpnet/Endoscope-WL/
+upstream/vendor/esfpnet/Pretrained/
+upstream/vendor/esfpnet/results/
 
 # Spyder project settings
 .spyderproject
@@ -205,6 +217,13 @@ tempCodeRunnerFile.py
 
 # Ruff stuff:
 .ruff_cache/
+
+# Project data and generated artifacts
+data/raw/
+data/splits/
+outputs/
+checkpoints/
+weights/
 
 # PyPI configuration file
 .pypirc
