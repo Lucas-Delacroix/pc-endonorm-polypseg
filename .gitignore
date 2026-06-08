@@ -221,6 +221,7 @@ tempCodeRunnerFile.py
 # Project data and generated artifacts
 data/raw/
 data/splits/
+data/preprocessed/
 outputs/
 checkpoints/
 weights/

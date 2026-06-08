@@ -1,0 +1,10 @@
+endonorm:
+  sigma: 25
+  alpha: 0.5
+
+phase_congruency:
+  nscale: 4
+  norient: 6
+
+morphology:
+  radii: [3, 7, 15]
