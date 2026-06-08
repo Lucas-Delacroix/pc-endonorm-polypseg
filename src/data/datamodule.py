@@ -1,7 +1,3 @@
-import json
-from pathlib import Path
-
-import torch
 from torch.utils.data import DataLoader
 
 from data.datasets.kvasir import KvasirDataset
@@ -21,6 +17,8 @@ class PolypDataModule:
         batch_size: int = 8,
         num_workers: int = 4,
         pin_memory: bool = True,
+        input_mode: str = "rgb",
+        preprocessed_root: str | None = None,
     ):
         assert dataset_name in self.DATASETS, (
             f"Dataset '{dataset_name}' not recognized. "
@@ -33,31 +31,27 @@ class PolypDataModule:
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
+        self.input_mode = input_mode
+        self.preprocessed_root = preprocessed_root
 
         self._train_dataset = None
         self._val_dataset = None
         self._test_dataset = None
 
-    def setup(self):
-        self._train_dataset = self.dataset_cls(
+    def _build_dataset(self, split, transform):
+        return self.dataset_cls(
             root=self.data_root,
-            split="train",
-            transform=get_train_transforms(self.image_size),
+            split=split,
+            transform=transform,
             image_size=self.image_size,
-        )
-        self._val_dataset = self.dataset_cls(
-            root=self.data_root,
-            split="val",
-            transform=get_val_transforms(self.image_size),
-            image_size=self.image_size,
-        )
-        self._test_dataset = self.dataset_cls(
-            root=self.data_root,
-            split="test",
-            transform=get_val_transforms(self.image_size),
-            image_size=self.image_size,
+            input_mode=self.input_mode,
+            preprocessed_root=self.preprocessed_root,
         )
 
+    def setup(self):
+        self._train_dataset = self._build_dataset("train", get_train_transforms(self.image_size))
+        self._val_dataset = self._build_dataset("val", get_val_transforms(self.image_size))
+        self._test_dataset = self._build_dataset("test", get_val_transforms(self.image_size))
         self._log_split_info()
 
     def _log_split_info(self):

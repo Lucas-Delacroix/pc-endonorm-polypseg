@@ -144,6 +144,8 @@ def main():
         batch_size=training_config["batch_size"],
         num_workers=config["data"]["num_workers"],
         pin_memory=config["data"]["pin_memory"],
+        input_mode=config["data"].get("input_mode", "rgb"),
+        preprocessed_root=config["data"].get("preprocessed_root"),
     )
     dm.setup()
 

@@ -40,3 +40,23 @@ def get_val_transforms(image_size: int = 352) -> A.Compose:
         ),
         ToTensorV2(),
     ])
+
+
+def get_photometric_transforms() -> A.Compose:
+    return A.Compose([
+        A.GaussNoise(p=0.3),
+        A.Equalize(p=0.3),
+        A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.0, p=0.5),
+    ])
+
+
+def get_geometric_transforms(image_size: int, augment: bool, additional_targets: dict) -> A.Compose:
+    transforms = [A.Resize(image_size, image_size)]
+    if augment:
+        transforms += [
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.2, rotate_limit=10, p=0.5),
+            A.Perspective(scale=(0.05, 0.1), p=0.5),
+        ]
+    return A.Compose(transforms, additional_targets=additional_targets)
