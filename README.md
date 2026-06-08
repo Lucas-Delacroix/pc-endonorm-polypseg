@@ -1,34 +1,22 @@
 # Reproducao de segmentacao em colonoscopia
 
-Reproducao do artigo "Application of Deep Learning Models for Semantic Segmentation of Colonoscopy Images".
+Reproducao do artigo "Application of Deep Learning Models for Semantic Segmentation of Colonoscopy Images", com foco no ESFPNet sobre o Kvasir-SEG.
 
 ## Uso
 
 ```bash
 make setup
-make train MODEL=esfpnet
+make train
 ```
 
-Modelo em `upstream/commands.yaml`.
+`make setup` baixa o Kvasir-SEG e os pesos pre-treinados do MiT. `make train` treina o ESFPNet pelo pipeline em `src/` usando `configs/models/esfpnet.yaml` (override com `make train CONFIG=...`).
 
-## Gerar a Tabela 2
+## Estrutura
 
-A tabela e calculada a partir das mascaras preditas no split de teste. O formato esperado para ESFPNet e:
+- `src/` — implementacao do projeto (modelo, dados, treino, avaliacao).
+- `scripts/` — utilitarios de download, treino e avaliacao.
+- `configs/` — configuracoes de experimento.
 
-```text
-outputs/predictions/<modelo>/<stem_da_imagem>.png
-```
+## Em andamento
 
-Depois do treino, exporte as predicoes do modelo ESFPNet:
-
-```bash
-make predict MODEL=esfpnet
-```
-
-Cada exportador salva as mascaras em `outputs/predictions/<modelo>/`. Depois gere a tabela:
-
-```bash
-make table2
-```
-
-Os arquivos sao salvos em `outputs/tables/table2.csv` e `outputs/tables/table2.md`.
+Pipeline experimental PC-EndoNorm-ESFPNet (entrada de 8 canais) e a avaliacao cross-dataset (Tabela 2, exportacao de predicoes, metricas em CVC-ClinicDB e ETIS-Larib) estao sendo implementados sobre o caminho `src/`.
