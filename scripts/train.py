@@ -159,6 +159,7 @@ def main():
         model_config["name"],
         num_classes=model_config["num_classes"],
         model_type=model_config.get("model_type", "b2"),
+        in_channels=model_config.get("in_channels", 3),
         pretrained_path=model_config.get("pretrained_path"),
     )
 

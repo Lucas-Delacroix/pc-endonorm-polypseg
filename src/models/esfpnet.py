@@ -43,6 +43,8 @@ MIT_CONFIGS = {
 }
 
 MIT_LAYERNORM_EPS = 1e-6
+RGB_CHANNELS = 3
+FIRST_CONV_WEIGHT_KEY = "patch_embed1.proj.weight"
 
 
 def drop_path(
@@ -523,6 +525,12 @@ class ESFPNet(BaseModel):
         state_dict = self._strip_prefixes(state_dict)
 
         backbone_state = self.backbone.state_dict()
+        if FIRST_CONV_WEIGHT_KEY in state_dict and FIRST_CONV_WEIGHT_KEY in backbone_state:
+            state_dict[FIRST_CONV_WEIGHT_KEY] = self._inflate_first_conv(
+                state_dict[FIRST_CONV_WEIGHT_KEY],
+                backbone_state[FIRST_CONV_WEIGHT_KEY].shape[1],
+            )
+
         compatible = {
             key: value
             for key, value in state_dict.items()
@@ -538,6 +546,17 @@ class ESFPNet(BaseModel):
             f"Loaded {len(compatible)} MiT encoder tensors from {checkpoint_path}. "
             f"Missing tensors: {len(missing)}"
         )
+
+    @staticmethod
+    def _inflate_first_conv(weight: torch.Tensor, target_in_channels: int) -> torch.Tensor:
+        source_in_channels = weight.shape[1]
+        if source_in_channels == target_in_channels:
+            return weight
+        if target_in_channels < source_in_channels:
+            return weight[:, :target_in_channels]
+        mean_weight = weight.mean(dim=1, keepdim=True)
+        extra = mean_weight.repeat(1, target_in_channels - source_in_channels, 1, 1)
+        return torch.cat([weight, extra], dim=1)
 
     @staticmethod
     def _extract_state_dict(checkpoint: Any) -> dict[str, torch.Tensor]:

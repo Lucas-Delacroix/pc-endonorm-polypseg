@@ -5,6 +5,7 @@ model:
   name: esfpnet
   model_type: b2
   num_classes: 1
+  in_channels: 3
   pretrained_path: weights/mit_b2.pth
 
 training:
