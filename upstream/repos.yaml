@@ -1,0 +1,6 @@
+repos:
+  esfpnet:
+    url: https://github.com/zengjixiangnfft/ESFPNet
+    ref: e2782546fe029f6d7e12e1dedf41079483f8ba26
+    framework: pytorch-mmcv
+    notes: Official ESFPNet repo by Qi Chang; training code is notebook-based, so a CLI overlay drives the Kvasir workflow.
