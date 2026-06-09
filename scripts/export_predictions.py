@@ -26,6 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-root", default=DEFAULT_DATA_ROOT)
     parser.add_argument("--split", default=DEFAULT_SPLIT, choices=("train", "val", "test"))
     parser.add_argument("--output-root", default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--preprocessed-root", default=None)
     parser.add_argument("--device", default="auto")
     return parser.parse_args()
 
@@ -91,6 +92,7 @@ def main() -> None:
         model_config["name"],
         num_classes=model_config["num_classes"],
         model_type=model_config.get("model_type", "b2"),
+        in_channels=model_config.get("in_channels", 3),
         pretrained_path=None,
     )
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
@@ -102,9 +104,11 @@ def main() -> None:
         split=args.split,
         transform=get_val_transforms(image_size),
         image_size=image_size,
+        input_mode=config["data"].get("input_mode", "rgb"),
+        preprocessed_root=args.preprocessed_root or config["data"].get("preprocessed_root"),
     )
 
-    output_dir = Path(args.output_root) / model_config["name"]
+    output_dir = Path(args.output_root) / run_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
     exported = export(model, dataset, device, output_dir)
