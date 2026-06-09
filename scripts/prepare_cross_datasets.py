@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
 
 TESTSET_GDRIVE_ID = "1Y2z7FD5p5y31vkZwQQomXFRB0HutHyao"
 ARCHIVE_NAME = "polyp-testset.zip"
+PREPROCESS_CONFIG = "configs/preprocess_pc_endonorm.yaml"
+IMAGE_SIZE = 352
 SUBSET_DIRS = {
     "cvc-colondb": "CVC-ColonDB",
     "etis-larib": "ETIS-LaribPolypDB",
@@ -27,14 +30,20 @@ DEFAULT_SUBSETS = ("cvc-colondb", "etis-larib")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Download external polyp test datasets from the PraNet TestDataset package."
+        description="Download and preprocess external polyp test datasets (PraNet TestDataset package)."
     )
     parser.add_argument("--raw-root", default="data/raw")
+    parser.add_argument("--preprocessed-root", default="data/preprocessed")
     parser.add_argument("--subsets", nargs="*", default=list(DEFAULT_SUBSETS), choices=list(SUBSET_DIRS))
     parser.add_argument("--archive", default=None, help="Path to a pre-downloaded TestDataset zip (skips Google Drive).")
     parser.add_argument("--gdrive-id", default=TESTSET_GDRIVE_ID)
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
+
+
+def run(command: list[str]) -> None:
+    print(f"\n$ {' '.join(command)}")
+    subprocess.run(command, check=True)
 
 
 def fetch_archive(gdrive_id: str, output_path: Path) -> None:
@@ -83,10 +92,15 @@ def install_subset(extracted_dir: Path, subset_key: str, raw_root: Path, force: 
     return target
 
 
-def subset_available(raw_root: Path, subset_key: str) -> bool:
+def raw_available(raw_root: Path, subset_key: str) -> bool:
     images = raw_root / subset_key / "images"
     masks = raw_root / subset_key / "masks"
     return images.is_dir() and masks.is_dir() and any(images.iterdir()) and any(masks.iterdir())
+
+
+def preprocessed_available(preprocessed_root: Path, subset_key: str) -> bool:
+    components = preprocessed_root / subset_key / "images_norm"
+    return components.is_dir() and any(components.iterdir())
 
 
 def validate(target: Path, subset_key: str) -> None:
@@ -101,15 +115,11 @@ def validate(target: Path, subset_key: str) -> None:
     print(f"Validated {subset_key}: {len(images)} samples at {target}")
 
 
-def main() -> None:
-    args = parse_args()
-    raw_root = Path(args.raw_root)
-    raw_root.mkdir(parents=True, exist_ok=True)
-
-    pending = [key for key in args.subsets if args.force or not subset_available(raw_root, key)]
+def download(args: argparse.Namespace, raw_root: Path) -> None:
+    pending = [key for key in args.subsets if args.force or not raw_available(raw_root, key)]
     for key in args.subsets:
         if key not in pending:
-            print(f"{key}: already available at {raw_root / key}, skipping.")
+            print(f"{key}: raw data already available at {raw_root / key}, skipping download.")
     if not pending:
         return
 
@@ -123,9 +133,37 @@ def main() -> None:
         extracted_dir.mkdir()
         safe_extract(archive_path, extracted_dir)
 
-        for subset_key in pending:
-            target = install_subset(extracted_dir, subset_key, raw_root, args.force)
-            validate(target, subset_key)
+        for key in pending:
+            target = install_subset(extracted_dir, key, raw_root, args.force)
+            validate(target, key)
+
+
+def preprocess(subset_key: str, raw_root: Path, preprocessed_root: Path) -> None:
+    run([
+        "uv", "run", "python", "scripts/generate_pc_endonorm_dataset.py",
+        "--dataset-name", subset_key,
+        "--images-dir", str(raw_root / subset_key / "images"),
+        "--output-dir", str(preprocessed_root / subset_key),
+        "--image-size", str(IMAGE_SIZE),
+        "--config", PREPROCESS_CONFIG,
+    ])
+
+
+def main() -> None:
+    args = parse_args()
+    raw_root = Path(args.raw_root)
+    preprocessed_root = Path(args.preprocessed_root)
+    raw_root.mkdir(parents=True, exist_ok=True)
+
+    download(args, raw_root)
+
+    for key in args.subsets:
+        if args.force or not preprocessed_available(preprocessed_root, key):
+            preprocess(key, raw_root, preprocessed_root)
+        else:
+            print(f"{key}: preprocessing already present at {preprocessed_root / key}, skipping.")
+
+    print("\nCross datasets prepared.")
 
 
 if __name__ == "__main__":

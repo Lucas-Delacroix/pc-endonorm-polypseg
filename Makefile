@@ -8,14 +8,13 @@ RUN_CONFIG = $(if $(EXP),configs/experiments/$(EXP).yaml,$(CONFIG))
 setup:
 	@$(UV) run python scripts/download_dataset.py
 	@$(UV) run python scripts/download_mit_weights.py
-	@$(UV) run python scripts/download_polyp_testset.py
 	@$(UV) run python scripts/generate_pc_endonorm_dataset.py \
 		--dataset-name Kvasir-SEG \
 		--images-dir data/raw/kvasir-seg/images \
 		--output-dir data/preprocessed/kvasir-seg \
 		--image-size 352 \
 		--config configs/preprocess_pc_endonorm.yaml
-	@$(UV) run python scripts/eval_cross_dataset.py --only-preprocess
+	@$(UV) run python scripts/prepare_cross_datasets.py
 
 train:
 	@$(UV) run python scripts/train.py --config $(RUN_CONFIG)
@@ -33,4 +32,4 @@ baseline: train evaluate
 exp: train evaluate cross
 
 cross:
-	@$(UV) run python scripts/eval_cross_dataset.py --skip-preprocess $(if $(EXP),--experiments $(EXP),)
+	@$(UV) run python scripts/eval_cross_dataset.py $(if $(EXP),--experiments $(EXP),)
