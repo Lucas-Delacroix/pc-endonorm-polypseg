@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 import torch
 
+from data.datasets.external import ExternalPolypDataset
 from data.datasets.kvasir import KvasirDataset
 from data.transforms.augmentation import get_val_transforms
 from models import get_model
@@ -27,6 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", default=DEFAULT_SPLIT, choices=("train", "val", "test"))
     parser.add_argument("--output-root", default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--preprocessed-root", default=None)
+    parser.add_argument("--external", action="store_true")
     parser.add_argument("--device", default="auto")
     return parser.parse_args()
 
@@ -99,7 +101,8 @@ def main() -> None:
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)
 
-    dataset = KvasirDataset(
+    dataset_cls = ExternalPolypDataset if args.external else KvasirDataset
+    dataset = dataset_cls(
         root=args.data_root,
         split=args.split,
         transform=get_val_transforms(image_size),

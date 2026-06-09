@@ -7,9 +7,12 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from scipy.ndimage import binary_erosion, distance_transform_edt
 
 
 MODEL_NAMES = {"esfpnet": "ESFPNet"}
+HD95_PERCENTILE = 95
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp")
 
 
 def parse_args() -> argparse.Namespace:
@@ -21,6 +24,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--models", nargs="*", default=None)
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--output-dir", default="outputs/tables")
+    parser.add_argument("--output-name", default="table2")
+    parser.add_argument("--external", action="store_true")
     parser.add_argument("--allow-missing", action="store_true")
     return parser.parse_args()
 
@@ -30,9 +35,21 @@ def load_split_indices(split_file: Path, split: str) -> list[int]:
         return json.load(file)[split]
 
 
-def load_samples(data_root: Path, split_file: Path, split: str) -> list[tuple[Path, Path]]:
-    images = sorted((data_root / "images").glob("*.jpg"))
+def match_mask(masks_dir: Path, stem: str) -> Path:
+    for extension in IMAGE_EXTENSIONS:
+        candidate = masks_dir / f"{stem}{extension}"
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(f"No mask found for '{stem}' in {masks_dir}")
+
+
+def load_samples(data_root: Path, split_file: Path, split: str, external: bool) -> list[tuple[Path, Path]]:
+    images_dir = data_root / "images"
     masks_dir = data_root / "masks"
+    if external:
+        images = sorted(p for p in images_dir.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS)
+        return [(image, match_mask(masks_dir, image.stem)) for image in images]
+    images = sorted(images_dir.glob("*.jpg"))
     return [(images[idx], masks_dir / images[idx].name) for idx in load_split_indices(split_file, split)]
 
 
@@ -82,6 +99,35 @@ def metric_values(prediction: np.ndarray, target: np.ndarray, smooth: float = 1e
     }
 
 
+def surface_pixels(mask: np.ndarray) -> np.ndarray:
+    return np.logical_xor(mask, binary_erosion(mask))
+
+
+def boundary_metrics(prediction: np.ndarray, target: np.ndarray) -> dict[str, float]:
+    pred = prediction.astype(bool)
+    gt = target.astype(bool)
+
+    if not pred.any() and not gt.any():
+        return {"hd95": 0.0, "assd": 0.0}
+
+    empty_penalty = float(np.hypot(*gt.shape))
+    if not pred.any() or not gt.any():
+        return {"hd95": empty_penalty, "assd": empty_penalty}
+
+    pred_surface = surface_pixels(pred)
+    gt_surface = surface_pixels(gt)
+
+    pred_to_gt = distance_transform_edt(~gt_surface)[pred_surface]
+    gt_to_pred = distance_transform_edt(~pred_surface)[gt_surface]
+
+    hd95 = max(
+        float(np.percentile(pred_to_gt, HD95_PERCENTILE)),
+        float(np.percentile(gt_to_pred, HD95_PERCENTILE)),
+    )
+    assd = float((pred_to_gt.sum() + gt_to_pred.sum()) / (pred_to_gt.size + gt_to_pred.size))
+    return {"hd95": hd95, "assd": assd}
+
+
 def evaluate_model(
     prediction_dir: Path,
     samples: list[tuple[Path, Path]],
@@ -89,7 +135,7 @@ def evaluate_model(
     allow_missing: bool,
 ) -> dict[str, float | int | str]:
     predictions = build_prediction_index(prediction_dir)
-    totals = {"dice": 0.0, "iou": 0.0, "precision": 0.0, "recall": 0.0}
+    totals = {"dice": 0.0, "iou": 0.0, "precision": 0.0, "recall": 0.0, "hd95": 0.0, "assd": 0.0}
     missing: list[str] = []
     evaluated = 0
 
@@ -102,6 +148,7 @@ def evaluate_model(
         target = read_binary_mask(mask_path, threshold=0.5)
         prediction = read_binary_mask(prediction_path, threshold=threshold, target_shape=target.shape)
         metrics = metric_values(prediction, target)
+        metrics.update(boundary_metrics(prediction, target))
 
         for key in totals:
             totals[key] += metrics[key]
@@ -119,6 +166,8 @@ def evaluate_model(
         "iou": totals["iou"] / evaluated,
         "precision": totals["precision"] / evaluated,
         "recall": totals["recall"] / evaluated,
+        "hd95": totals["hd95"] / evaluated,
+        "assd": totals["assd"] / evaluated,
         "n_evaluated": evaluated,
         "n_missing": len(missing),
     }
@@ -133,6 +182,8 @@ def write_csv(rows: list[dict[str, float | int | str]], output_path: Path) -> No
         "iou",
         "precision",
         "recall",
+        "hd95",
+        "assd",
         "n_evaluated",
         "n_missing",
     ]
@@ -146,14 +197,16 @@ def write_csv(rows: list[dict[str, float | int | str]], output_path: Path) -> No
                 "iou": f"{row['iou']:.6f}",
                 "precision": f"{row['precision']:.6f}",
                 "recall": f"{row['recall']:.6f}",
+                "hd95": f"{row['hd95']:.6f}",
+                "assd": f"{row['assd']:.6f}",
             })
 
 
 def write_markdown(rows: list[dict[str, float | int | str]], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
-        "| Modelo | DICE | IoU | Precisao | Cobertura |",
-        "|---|---:|---:|---:|---:|",
+        "| Modelo | DICE | IoU | Precisao | Cobertura | HD95 | ASSD |",
+        "|---|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
         lines.append(
@@ -161,7 +214,9 @@ def write_markdown(rows: list[dict[str, float | int | str]], output_path: Path) 
             f"{row['dice']:.4f} | "
             f"{row['iou']:.4f} | "
             f"{row['precision']:.4f} | "
-            f"{row['recall']:.4f} |"
+            f"{row['recall']:.4f} | "
+            f"{row['hd95']:.2f} | "
+            f"{row['assd']:.2f} |"
         )
 
     output_path.write_text("\n".join(lines) + "\n")
@@ -174,19 +229,20 @@ def main() -> None:
     split_file = Path(args.split_file)
     output_dir = Path(args.output_dir)
 
-    samples = load_samples(data_root, split_file, args.split)
+    samples = load_samples(data_root, split_file, args.split, args.external)
     rows = [
         evaluate_model(path, samples, args.threshold, args.allow_missing)
         for path in model_dirs(predictions_root, args.models)
     ]
     rows.sort(key=lambda row: row["dice"], reverse=True)
 
-    csv_path = output_dir / "table2.csv"
-    markdown_path = output_dir / "table2.md"
+    csv_path = output_dir / f"{args.output_name}.csv"
+    markdown_path = output_dir / f"{args.output_name}.md"
     write_csv(rows, csv_path)
     write_markdown(rows, markdown_path)
 
-    print(f"Evaluated {len(rows)} model(s) on {args.split} split ({len(samples)} images).")
+    split_label = "all" if args.external else args.split
+    print(f"Evaluated {len(rows)} model(s) on {split_label} ({len(samples)} images).")
     print(f"CSV: {csv_path}")
     print(f"Markdown: {markdown_path}")
 
