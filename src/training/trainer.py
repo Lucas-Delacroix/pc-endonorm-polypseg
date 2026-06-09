@@ -2,9 +2,11 @@ import time
 from pathlib import Path
 import torch
 import torch.nn as nn
+from torch.optim.swa_utils import AveragedModel, SWALR
 from torch.utils.data import DataLoader
 from evaluation.metrics import compute_all_metrics
-from training.losses import get_loss
+from training.ema import ModelEMA
+from training.losses import build_loss
 
 
 class Trainer:
@@ -33,14 +35,31 @@ class Trainer:
         print(f"Using device: {self.device}")
         self.model = self.model.to(self.device)
 
-        self.loss_fn = get_loss(config.get("loss", "structure"))
+        self.loss_fn = build_loss(config.get("loss", "structure"))
         self.optimizer = self._build_optimizer()
         self.scheduler = self._build_scheduler()
+        self.epochs = self.config.get("epochs", 200)
+
+        ema_config = config.get("ema", {}) or {}
+        self.use_ema = ema_config.get("enabled", False)
+        self.ema = ModelEMA(self.model, decay=ema_config.get("decay", 0.999)).to(self.device) if self.use_ema else None
+
+        swa_config = config.get("swa", {}) or {}
+        self.use_swa = swa_config.get("enabled", False)
+        self.swa_start = int(self.epochs * swa_config.get("start_epoch_ratio", 0.75))
+        self.swa_update_bn = swa_config.get("update_bn", True)
+        if self.use_swa:
+            self.swa_model = AveragedModel(self.model)
+            self.swa_scheduler = SWALR(self.optimizer, swa_lr=float(swa_config.get("lr", 5e-5)))
+        else:
+            self.swa_model = None
 
         self.checkpoint_dir = Path(config.get("checkpoint_dir", "checkpoints"))
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         self.best_val_loss = float("inf")
+        self.best_raw_dice = float("-inf")
+        self.best_ema_dice = float("-inf")
         self.history = []
 
     def _build_optimizer(self) -> torch.optim.Optimizer:
@@ -50,24 +69,11 @@ class Trainer:
         weight_decay = float(opt_config.get("weight_decay", 1e-5))
 
         if name == "adam":
-            return torch.optim.Adam(
-                self.model.parameters(),
-                lr=lr,
-                weight_decay=weight_decay,
-            )
+            return torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
         if name == "adamw":
-            return torch.optim.AdamW(
-                self.model.parameters(),
-                lr=lr,
-                weight_decay=weight_decay,
-            )
+            return torch.optim.AdamW(self.model.parameters(), lr=lr, weight_decay=weight_decay)
         if name == "sgd":
-            return torch.optim.SGD(
-                self.model.parameters(),
-                lr=lr,
-                weight_decay=weight_decay,
-                momentum=0.9,
-            )
+            return torch.optim.SGD(self.model.parameters(), lr=lr, weight_decay=weight_decay, momentum=0.9)
         raise ValueError(f"Unrecognized optimizer '{name}'.")
 
     def _build_scheduler(self):
@@ -78,11 +84,7 @@ class Trainer:
         min_lr = float(sched_config.get("min_lr", 1e-6))
 
         if name == "cosine":
-            return torch.optim.lr_scheduler.CosineAnnealingLR(
-                self.optimizer,
-                T_max=t_max,
-                eta_min=min_lr,
-            )
+            return torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=t_max, eta_min=min_lr)
         if name == "step":
             return torch.optim.lr_scheduler.StepLR(
                 self.optimizer,
@@ -114,22 +116,21 @@ class Trainer:
             loss.backward()
             self.optimizer.step()
 
+            if self.use_ema:
+                self.ema.update(self.model)
+
             with torch.no_grad():
                 binary_preds = (torch.sigmoid(preds) > 0.5).float()
-                metrics = compute_all_metrics(binary_preds.cpu(), masks.cpu())
-                total_dice += metrics["dice"]
+                total_dice += compute_all_metrics(binary_preds.cpu(), masks.cpu())["dice"]
 
             total_loss += loss.item()
 
         n = len(self.train_loader)
-        return {
-            "loss": total_loss / n,
-            "dice": total_dice / n,
-        }
+        return {"loss": total_loss / n, "dice": total_dice / n}
 
     @torch.no_grad()
-    def _val_epoch(self) -> dict:
-        self.model.eval()
+    def _evaluate(self, model: nn.Module) -> dict:
+        model.eval()
         total_loss = 0.0
         all_metrics = {"dice": 0.0, "iou": 0.0, "precision": 0.0, "recall": 0.0}
 
@@ -137,51 +138,63 @@ class Trainer:
             images = batch["image"].to(self.device)
             masks = batch["mask"].to(self.device)
 
-            preds = self.model(images)
+            preds = model(images)
             if isinstance(preds, (list, tuple)):
                 preds = preds[0]
 
-            loss = self.loss_fn(preds, masks)
-            total_loss += loss.item()
-
+            total_loss += self.loss_fn(preds, masks).item()
             binary_preds = (torch.sigmoid(preds) > 0.5).float()
             metrics = compute_all_metrics(binary_preds.cpu(), masks.cpu())
             for k in all_metrics:
                 all_metrics[k] += metrics[k]
 
         n = len(self.val_loader)
-        return {
-            "loss": total_loss / n,
-            **{k: v / n for k, v in all_metrics.items()},
-        }
+        return {"loss": total_loss / n, **{k: v / n for k, v in all_metrics.items()}}
 
-    def _save_checkpoint(self, epoch: int, metrics: dict):
-        path = self.checkpoint_dir / "best.pth"
+    def _update_swa_batchnorm(self) -> None:
+        batchnorm_modules = [
+            module for module in self.swa_model.modules()
+            if isinstance(module, torch.nn.modules.batchnorm._BatchNorm)
+        ]
+        if not batchnorm_modules:
+            return
+
+        momenta = {}
+        for module in batchnorm_modules:
+            module.reset_running_stats()
+            momenta[module] = module.momentum
+            module.momentum = None
+
+        self.swa_model.train()
+        with torch.no_grad():
+            for batch in self.train_loader:
+                self.swa_model(batch["image"].to(self.device))
+
+        for module, momentum in momenta.items():
+            module.momentum = momentum
+
+    def _save(self, filename: str, model: nn.Module, epoch: int, metrics: dict) -> None:
         torch.save(
             {
                 "epoch": epoch,
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
+                "model_state_dict": model.state_dict(),
                 "metrics": metrics,
                 "config": self.config,
             },
-            path,
+            self.checkpoint_dir / filename,
         )
-        print(f"  Checkpoint saved (epoch {epoch}, loss={metrics['loss']:.6f})")
 
-    def _log_epoch(self, epoch: int, epochs: int, train: dict, val: dict, elapsed: float):
+    def _log_epoch(self, epoch, epochs, train, val, ema, elapsed):
+        ema_text = f" ema_dice={ema['dice']:.4f}" if ema else ""
         print(
             f"Epoch [{epoch:03d}/{epochs}] "
-            f"loss={train['loss']:.4f} "
-            f"dice={train['dice']:.4f} | "
-            f"val_loss={val['loss']:.4f} "
-            f"val_dice={val['dice']:.4f} "
-            f"val_iou={val['iou']:.4f} "
-            f"({elapsed:.1f}s)"
+            f"loss={train['loss']:.4f} dice={train['dice']:.4f} | "
+            f"val_loss={val['loss']:.4f} val_dice={val['dice']:.4f} "
+            f"val_iou={val['iou']:.4f}{ema_text} ({elapsed:.1f}s)"
         )
 
     def fit(self):
-        epochs = self.config.get("epochs", 200)
+        epochs = self.epochs
         log_every = self.config.get("log_every_n_epochs", 1)
 
         print(f"\nStarting training for {epochs} epochs...")
@@ -191,9 +204,13 @@ class Trainer:
             start = time.time()
 
             train_metrics = self._train_epoch()
-            val_metrics = self._val_epoch()
+            val_metrics = self._evaluate(self.model)
+            ema_metrics = self._evaluate(self.ema.module) if self.use_ema else None
 
-            if self.scheduler:
+            if self.use_swa and epoch >= self.swa_start:
+                self.swa_model.update_parameters(self.model)
+                self.swa_scheduler.step()
+            elif self.scheduler:
                 self.scheduler.step()
 
             elapsed = time.time() - start
@@ -204,14 +221,32 @@ class Trainer:
                 "val": val_metrics,
                 "lr": self.optimizer.param_groups[0]["lr"],
             }
+            if ema_metrics:
+                record["ema"] = ema_metrics
             self.history.append(record)
 
             if epoch % log_every == 0:
-                self._log_epoch(epoch, epochs, train_metrics, val_metrics, elapsed)
+                self._log_epoch(epoch, epochs, train_metrics, val_metrics, ema_metrics, elapsed)
 
             if val_metrics["loss"] < self.best_val_loss:
                 self.best_val_loss = val_metrics["loss"]
-                self._save_checkpoint(epoch, val_metrics)
+                self._save("best.pth", self.model, epoch, val_metrics)
+
+            if self.use_ema or self.use_swa:
+                self._save("last.pt", self.model, epoch, val_metrics)
+                if val_metrics["dice"] > self.best_raw_dice:
+                    self.best_raw_dice = val_metrics["dice"]
+                    self._save("best_raw.pt", self.model, epoch, val_metrics)
+                if ema_metrics and ema_metrics["dice"] > self.best_ema_dice:
+                    self.best_ema_dice = ema_metrics["dice"]
+                    self._save("best_ema.pt", self.ema.module, epoch, ema_metrics)
+
+        if self.use_swa:
+            if self.swa_update_bn:
+                self._update_swa_batchnorm()
+            swa_metrics = self._evaluate(self.swa_model)
+            self._save("best_swa.pt", self.swa_model, epochs, swa_metrics)
+            print(f"SWA validation: dice={swa_metrics['dice']:.4f} iou={swa_metrics['iou']:.4f}")
 
         print("=" * 70)
         print(f"Training completed. Best validation loss: {self.best_val_loss:.6f}")
