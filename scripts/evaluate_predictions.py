@@ -9,9 +9,12 @@ import cv2
 import numpy as np
 from scipy.ndimage import binary_erosion, distance_transform_edt
 
+from postprocessing.connected_components import connected_component_filter
+
 
 MODEL_NAMES = {"esfpnet": "ESFPNet"}
 HD95_PERCENTILE = 95
+BOUNDARY_F1_TOLERANCE = 0.0075
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp")
 
 
@@ -26,6 +29,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", default="outputs/tables")
     parser.add_argument("--output-name", default="table2")
     parser.add_argument("--external", action="store_true")
+    parser.add_argument("--postprocess-cc", action="store_true")
+    parser.add_argument("--cc-min-area-ratio", type=float, default=0.0005)
+    parser.add_argument("--cc-keep-largest", action="store_true")
     parser.add_argument("--allow-missing", action="store_true")
     return parser.parse_args()
 
@@ -108,11 +114,11 @@ def boundary_metrics(prediction: np.ndarray, target: np.ndarray) -> dict[str, fl
     gt = target.astype(bool)
 
     if not pred.any() and not gt.any():
-        return {"hd95": 0.0, "assd": 0.0}
+        return {"hd95": 0.0, "assd": 0.0, "boundary_f1": 1.0}
 
     empty_penalty = float(np.hypot(*gt.shape))
     if not pred.any() or not gt.any():
-        return {"hd95": empty_penalty, "assd": empty_penalty}
+        return {"hd95": empty_penalty, "assd": empty_penalty, "boundary_f1": 0.0}
 
     pred_surface = surface_pixels(pred)
     gt_surface = surface_pixels(gt)
@@ -125,7 +131,16 @@ def boundary_metrics(prediction: np.ndarray, target: np.ndarray) -> dict[str, fl
         float(np.percentile(gt_to_pred, HD95_PERCENTILE)),
     )
     assd = float((pred_to_gt.sum() + gt_to_pred.sum()) / (pred_to_gt.size + gt_to_pred.size))
-    return {"hd95": hd95, "assd": assd}
+
+    tolerance = max(1.0, BOUNDARY_F1_TOLERANCE * empty_penalty)
+    boundary_precision = float((pred_to_gt <= tolerance).mean())
+    boundary_recall = float((gt_to_pred <= tolerance).mean())
+    boundary_f1 = (
+        2.0 * boundary_precision * boundary_recall / (boundary_precision + boundary_recall)
+        if (boundary_precision + boundary_recall) > 0
+        else 0.0
+    )
+    return {"hd95": hd95, "assd": assd, "boundary_f1": boundary_f1}
 
 
 def evaluate_model(
@@ -133,9 +148,10 @@ def evaluate_model(
     samples: list[tuple[Path, Path]],
     threshold: float,
     allow_missing: bool,
+    postprocess=None,
 ) -> dict[str, float | int | str]:
     predictions = build_prediction_index(prediction_dir)
-    totals = {"dice": 0.0, "iou": 0.0, "precision": 0.0, "recall": 0.0, "hd95": 0.0, "assd": 0.0}
+    totals = {"dice": 0.0, "iou": 0.0, "precision": 0.0, "recall": 0.0, "hd95": 0.0, "assd": 0.0, "boundary_f1": 0.0}
     missing: list[str] = []
     evaluated = 0
 
@@ -147,6 +163,8 @@ def evaluate_model(
 
         target = read_binary_mask(mask_path, threshold=0.5)
         prediction = read_binary_mask(prediction_path, threshold=threshold, target_shape=target.shape)
+        if postprocess is not None:
+            prediction = postprocess(prediction)
         metrics = metric_values(prediction, target)
         metrics.update(boundary_metrics(prediction, target))
 
@@ -168,6 +186,7 @@ def evaluate_model(
         "recall": totals["recall"] / evaluated,
         "hd95": totals["hd95"] / evaluated,
         "assd": totals["assd"] / evaluated,
+        "boundary_f1": totals["boundary_f1"] / evaluated,
         "n_evaluated": evaluated,
         "n_missing": len(missing),
     }
@@ -184,6 +203,7 @@ def write_csv(rows: list[dict[str, float | int | str]], output_path: Path) -> No
         "recall",
         "hd95",
         "assd",
+        "boundary_f1",
         "n_evaluated",
         "n_missing",
     ]
@@ -199,14 +219,15 @@ def write_csv(rows: list[dict[str, float | int | str]], output_path: Path) -> No
                 "recall": f"{row['recall']:.6f}",
                 "hd95": f"{row['hd95']:.6f}",
                 "assd": f"{row['assd']:.6f}",
+                "boundary_f1": f"{row['boundary_f1']:.6f}",
             })
 
 
 def write_markdown(rows: list[dict[str, float | int | str]], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
-        "| Modelo | DICE | IoU | Precisao | Cobertura | HD95 | ASSD |",
-        "|---|---:|---:|---:|---:|---:|---:|",
+        "| Modelo | DICE | IoU | Precisao | Cobertura | HD95 | ASSD | BoundaryF1 |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
         lines.append(
@@ -216,7 +237,8 @@ def write_markdown(rows: list[dict[str, float | int | str]], output_path: Path) 
             f"{row['precision']:.4f} | "
             f"{row['recall']:.4f} | "
             f"{row['hd95']:.2f} | "
-            f"{row['assd']:.2f} |"
+            f"{row['assd']:.2f} | "
+            f"{row['boundary_f1']:.4f} |"
         )
 
     output_path.write_text("\n".join(lines) + "\n")
@@ -229,9 +251,15 @@ def main() -> None:
     split_file = Path(args.split_file)
     output_dir = Path(args.output_dir)
 
+    postprocess = None
+    if args.postprocess_cc:
+        postprocess = lambda mask: connected_component_filter(
+            mask, args.cc_min_area_ratio, args.cc_keep_largest
+        )
+
     samples = load_samples(data_root, split_file, args.split, args.external)
     rows = [
-        evaluate_model(path, samples, args.threshold, args.allow_missing)
+        evaluate_model(path, samples, args.threshold, args.allow_missing, postprocess)
         for path in model_dirs(predictions_root, args.models)
     ]
     rows.sort(key=lambda row: row["dice"], reverse=True)
