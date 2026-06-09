@@ -8,3 +8,7 @@ phase_congruency:
 
 morphology:
   radii: [3, 7, 15]
+
+clahe:
+  clip_limit: 2.0
+  tile_grid_size: 8

@@ -7,6 +7,7 @@ from data.datasets.kvasir import KvasirDataset
 
 EXPECTED_CHANNELS = {
     "rgb": 3,
+    "rgb_clahe": 6,
     "rgb_norm": 6,
     "rgb_phase": 4,
     "rgb_norm_phase": 7,

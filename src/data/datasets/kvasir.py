@@ -11,6 +11,7 @@ from data.transforms.augmentation import get_geometric_transforms, get_photometr
 
 MODE_COMPONENTS = {
     "rgb": ("rgb",),
+    "rgb_clahe": ("rgb", "clahe"),
     "rgb_norm": ("rgb", "norm"),
     "rgb_phase": ("rgb", "phase"),
     "rgb_norm_phase": ("rgb", "norm", "phase"),
@@ -24,10 +25,12 @@ MAP_STD = (0.5,)
 COMPONENT_STATS = {
     "rgb": (IMAGENET_MEAN, IMAGENET_STD),
     "norm": (IMAGENET_MEAN, IMAGENET_STD),
+    "clahe": (IMAGENET_MEAN, IMAGENET_STD),
     "phase": (MAP_MEAN, MAP_STD),
     "morph": (MAP_MEAN, MAP_STD),
 }
-COMPONENT_DIRS = {"norm": "images_norm", "phase": "phase", "morph": "morph"}
+COMPONENT_DIRS = {"norm": "images_norm", "clahe": "images_clahe", "phase": "phase", "morph": "morph"}
+RGB_COMPONENTS = ("norm", "clahe")
 MASK_THRESHOLD = 127
 
 
@@ -140,7 +143,7 @@ class KvasirDataset(BaseDataset):
         return cv2.resize(image, (self.image_size, self.image_size))
 
     def _read_map(self, stem, name):
-        if name == "norm":
+        if name in RGB_COMPONENTS:
             path = self.preprocessed_root / COMPONENT_DIRS[name] / f"{stem}.png"
             image = cv2.cvtColor(cv2.imread(str(path)), cv2.COLOR_BGR2RGB)
             return cv2.resize(image, (self.image_size, self.image_size)).astype(np.float32) / 255.0
