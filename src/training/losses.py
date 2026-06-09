@@ -55,10 +55,61 @@ class StructureLoss(nn.Module):
         return loss
 
 
+class FocalTverskyLoss(nn.Module):
+    ALPHA_PENALIZES = "false_positives"
+    BETA_PENALIZES = "false_negatives"
+
+    def __init__(self, alpha: float = 0.7, beta: float = 0.3, gamma: float = 0.75, smooth: float = 1e-6):
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+        self.smooth = smooth
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        pred = torch.sigmoid(pred).contiguous().view(-1)
+        target = target.contiguous().view(-1)
+
+        true_positive = (pred * target).sum()
+        false_positive = (pred * (1 - target)).sum()
+        false_negative = ((1 - pred) * target).sum()
+
+        tversky = (true_positive + self.smooth) / (
+            true_positive + self.alpha * false_positive + self.beta * false_negative + self.smooth
+        )
+        return torch.pow(1 - tversky, self.gamma)
+
+
+class CombinedLoss(nn.Module):
+    def __init__(
+        self,
+        dice_weight: float = 0.4,
+        bce_weight: float = 0.2,
+        focal_tversky_weight: float = 0.4,
+        focal_tversky: dict | None = None,
+    ):
+        super().__init__()
+        self.dice_weight = dice_weight
+        self.bce_weight = bce_weight
+        self.focal_tversky_weight = focal_tversky_weight
+        self.dice = DiceLoss()
+        self.bce = nn.BCEWithLogitsLoss()
+        self.focal_tversky = FocalTverskyLoss(**(focal_tversky or {}))
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        return (
+            self.dice_weight * self.dice(pred, target)
+            + self.bce_weight * self.bce(pred, target)
+            + self.focal_tversky_weight * self.focal_tversky(pred, target)
+        )
+
+
 LOSSES = {
     "bce_dice": BCEDiceLoss,
     "dice": DiceLoss,
     "structure": StructureLoss,
+    "focal_tversky": FocalTverskyLoss,
+    "combined": CombinedLoss,
 }
 
 
@@ -67,3 +118,11 @@ def get_loss(name: str, **kwargs) -> nn.Module:
         f"Loss '{name}' não reconhecida. Opções: {list(LOSSES.keys())}"
     )
     return LOSSES[name](**kwargs)
+
+
+def build_loss(config) -> nn.Module:
+    if isinstance(config, str):
+        return get_loss(config)
+    config = dict(config)
+    name = config.pop("name")
+    return get_loss(name, **config)
