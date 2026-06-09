@@ -2,6 +2,7 @@ from torch.utils.data import DataLoader
 
 from data.datasets.kvasir import KvasirDataset
 from data.transforms.augmentation import get_train_transforms, get_val_transforms
+from data.transforms.robust_style import build_robust_train_transforms
 
 
 class PolypDataModule:
@@ -19,6 +20,7 @@ class PolypDataModule:
         pin_memory: bool = True,
         input_mode: str = "rgb",
         preprocessed_root: str | None = None,
+        augmentation: dict | None = None,
     ):
         assert dataset_name in self.DATASETS, (
             f"Dataset '{dataset_name}' not recognized. "
@@ -33,6 +35,7 @@ class PolypDataModule:
         self.pin_memory = pin_memory
         self.input_mode = input_mode
         self.preprocessed_root = preprocessed_root
+        self.augmentation = augmentation
 
         self._train_dataset = None
         self._val_dataset = None
@@ -48,8 +51,13 @@ class PolypDataModule:
             preprocessed_root=self.preprocessed_root,
         )
 
+    def _train_transform(self):
+        if self.augmentation:
+            return build_robust_train_transforms(self.image_size, self.augmentation)
+        return get_train_transforms(self.image_size)
+
     def setup(self):
-        self._train_dataset = self._build_dataset("train", get_train_transforms(self.image_size))
+        self._train_dataset = self._build_dataset("train", self._train_transform())
         self._val_dataset = self._build_dataset("val", get_val_transforms(self.image_size))
         self._test_dataset = self._build_dataset("test", get_val_transforms(self.image_size))
         self._log_split_info()

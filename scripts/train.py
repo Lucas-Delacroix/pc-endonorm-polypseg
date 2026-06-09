@@ -146,6 +146,7 @@ def main():
         pin_memory=config["data"]["pin_memory"],
         input_mode=config["data"].get("input_mode", "rgb"),
         preprocessed_root=config["data"].get("preprocessed_root"),
+        augmentation=config.get("augmentation"),
     )
     dm.setup()
 
