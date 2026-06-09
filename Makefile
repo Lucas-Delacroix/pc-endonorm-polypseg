@@ -1,7 +1,9 @@
 UV ?= uv
 CONFIG ?= configs/models/esfpnet.yaml
-EXP ?=
+EXP ?= $(exp)
 RUN_CONFIG = $(if $(EXP),configs/experiments/$(EXP).yaml,$(CONFIG))
+
+.DEFAULT_GOAL := $(if $(EXP),exp,setup)
 
 .PHONY: setup train predict table2 evaluate baseline exp cross
 
