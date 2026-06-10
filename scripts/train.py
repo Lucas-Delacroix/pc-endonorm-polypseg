@@ -1,6 +1,6 @@
 import argparse
+import csv
 import random
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -8,9 +8,16 @@ import torch
 import yaml
 from torch.utils.data import Subset
 
-from data.datamodule import PolypDataModule
 from models import get_model
 from training.trainer import Trainer
+from training.configured_datamodule import (
+    build_datamodule,
+    checkpoint_dir_for,
+    is_multisource_config,
+    save_resolved_config,
+    smoke_check_batch,
+    write_train_leakage_report,
+)
 
 
 def parse_args():
@@ -105,6 +112,7 @@ def set_seed(seed: int):
 def main():
     args = parse_args()
     config = load_config(args.config)
+    multi_source = is_multisource_config(config)
 
     seed = config.get("seed", 42)
     set_seed(seed)
@@ -132,23 +140,15 @@ def main():
     training_config = config["training"]
     model_config = config["model"]
 
-    training_config["checkpoint_dir"] = str(
-        Path("checkpoints") / config["logging"]["run_name"]
-    )
+    checkpoint_dir = checkpoint_dir_for(config, multi_source)
+    training_config["checkpoint_dir"] = str(checkpoint_dir)
+    if multi_source:
+        save_resolved_config(config, checkpoint_dir)
 
     print("\nInitializing DataModule...")
-    dm = PolypDataModule(
-        dataset_name=config["data"]["dataset"],
-        data_root=args.data_root,
-        image_size=config["data"]["image_size"],
-        batch_size=training_config["batch_size"],
-        num_workers=config["data"]["num_workers"],
-        pin_memory=config["data"]["pin_memory"],
-        input_mode=config["data"].get("input_mode", "rgb"),
-        preprocessed_root=config["data"].get("preprocessed_root"),
-        augmentation=config.get("augmentation"),
-    )
+    dm = build_datamodule(config, args, multi_source)
     dm.setup()
+    write_train_leakage_report(config, dm, multi_source)
 
     if args.smoke_test:
         dm._train_dataset = truncate_dataset(dm._train_dataset, 8)
@@ -156,6 +156,14 @@ def main():
         print("Smoke test subset:")
         print(f"  Train:    {len(dm._train_dataset)} images")
         print(f"  Validation: {len(dm._val_dataset)} images")
+        if hasattr(dm, "_test_datasets"):
+            dm._test_datasets = {
+                name: truncate_dataset(dataset, 4)
+                for name, dataset in dm._test_datasets.items()
+            }
+            for name, dataset in dm._test_datasets.items():
+                print(f"  Test {name}: {len(dataset)} images")
+        smoke_check_batch(dm.train_loader())
 
     print("\nBuilding model...")
     model = get_model(
@@ -179,10 +187,9 @@ def main():
 
     history = trainer.fit()
 
-    output_dir = Path("outputs") / config["logging"]["run_name"]
+    output_dir = Path(config.get("paths", {}).get("outputs", "outputs")) / config["logging"]["run_name"]
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    import csv
     csv_path = output_dir / "history.csv"
     with open(csv_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=[
@@ -205,7 +212,7 @@ def main():
             })
 
     print(f"\nHistory saved to: {csv_path}")
-    print(f"Best checkpoint: checkpoints/{config['logging']['run_name']}/best.pth")
+    print(f"Best checkpoint: {checkpoint_dir / 'best.pth'}")
 
 
 if __name__ == "__main__":

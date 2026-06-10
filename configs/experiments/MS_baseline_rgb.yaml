@@ -1,0 +1,72 @@
+defaults:
+  - ../base
+
+seed: 42
+
+paths:
+  data_root: data/raw
+  checkpoints: checkpoints
+  outputs: outputs
+  results: results
+
+model:
+  name: esfpnet
+  model_type: b2
+  num_classes: 1
+  in_channels: 3
+  pretrained_path: weights/mit_b2.pth
+
+data:
+  dataset: kvasir
+  input_mode: rgb
+  image_size: 352
+  num_workers: 4
+  pin_memory: true
+
+training:
+  loss: structure
+  epochs: 200
+  batch_size: 8
+  optimizer:
+    name: adam
+    lr: 1.0e-4
+    weight_decay: 1.0e-5
+  scheduler:
+    name: cosine
+    min_lr: 1.0e-6
+
+dataset:
+  split:
+    mode: random
+    train_ratio: 0.9
+    val_ratio: 0.1
+    seed: 42
+  train:
+    sources:
+      - name: kvasir
+        images_dir: data/raw/kvasir-seg/images
+        masks_dir: data/raw/kvasir-seg/masks
+        split: train
+      - name: cvc_clinicdb
+        images_dir: data/raw/cvc-clinicdb/images
+        masks_dir: data/raw/cvc-clinicdb/masks
+        split: train
+  val:
+    source:
+      name: kvasir_val
+      images_dir: data/raw/kvasir-seg/images
+      masks_dir: data/raw/kvasir-seg/masks
+      split: val
+  test:
+    sources:
+      - name: cvc_colondb
+        images_dir: data/raw/cvc-colondb/images
+        masks_dir: data/raw/cvc-colondb/masks
+        split: all
+      - name: etis_larib
+        images_dir: data/raw/etis-larib/images
+        masks_dir: data/raw/etis-larib/masks
+        split: all
+
+logging:
+  run_name: MS_baseline_rgb
