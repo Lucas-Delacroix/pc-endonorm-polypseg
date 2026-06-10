@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import albumentations as A
+import cv2
 import numpy as np
 from albumentations.pytorch import ToTensorV2
 
@@ -8,6 +9,17 @@ IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
 FOURIER_DEFAULTS = {"p": 0.5, "beta": 0.05, "strength": 0.15, "low_freq_only": True}
+RANDCONV_DEFAULTS = {
+    "p": 0.3,
+    "kernel_sizes": (1, 3, 5),
+    "mix_alpha_min": 0.1,
+    "mix_alpha_max": 0.35,
+    "depthwise": True,
+    "normalize_kernel": True,
+    "normalize_output": True,
+    "same_kernel_per_channel": False,
+}
+KERNEL_NORM_EPS = 1e-8
 
 
 class FourierAmplitudeRandomization(A.ImageOnlyTransform):
@@ -51,6 +63,79 @@ class FourierAmplitudeRandomization(A.ImageOnlyTransform):
 
     def get_transform_init_args_names(self):
         return ("beta", "strength", "low_freq_only")
+
+
+class RandConvTransform(A.ImageOnlyTransform):
+    def __init__(
+        self,
+        kernel_sizes=(1, 3, 5),
+        mix_alpha_min=0.1,
+        mix_alpha_max=0.35,
+        depthwise=True,
+        normalize_kernel=True,
+        normalize_output=True,
+        same_kernel_per_channel=False,
+        p=0.3,
+    ):
+        super().__init__(p=p)
+        self.kernel_sizes = tuple(kernel_sizes)
+        self.mix_alpha_min = mix_alpha_min
+        self.mix_alpha_max = mix_alpha_max
+        self.depthwise = depthwise
+        self.normalize_kernel = normalize_kernel
+        self.normalize_output = normalize_output
+        self.same_kernel_per_channel = same_kernel_per_channel
+
+    def _random_kernel(self, kernel_size: int) -> np.ndarray:
+        kernel = np.random.randn(kernel_size, kernel_size).astype(np.float32)
+        if self.normalize_kernel:
+            kernel = kernel / (np.abs(kernel).sum() + KERNEL_NORM_EPS)
+        return kernel
+
+    def apply(self, img: np.ndarray, **params) -> np.ndarray:
+        image = img.astype(np.float32) / 255.0
+        kernel_size = int(np.random.choice(self.kernel_sizes))
+
+        if self.same_kernel_per_channel or not self.depthwise:
+            kernel = self._random_kernel(kernel_size)
+            convolved = cv2.filter2D(image, -1, kernel, borderType=cv2.BORDER_REFLECT)
+        else:
+            convolved = np.empty_like(image)
+            for channel in range(image.shape[2]):
+                kernel = self._random_kernel(kernel_size)
+                convolved[..., channel] = cv2.filter2D(
+                    image[..., channel], -1, kernel, borderType=cv2.BORDER_REFLECT
+                )
+
+        alpha = np.random.uniform(self.mix_alpha_min, self.mix_alpha_max)
+        output = (1.0 - alpha) * image + alpha * convolved
+        if self.normalize_output:
+            output = np.clip(output, 0.0, 1.0)
+        return (output * 255.0).astype(np.uint8)
+
+    def get_transform_init_args_names(self):
+        return (
+            "kernel_sizes",
+            "mix_alpha_min",
+            "mix_alpha_max",
+            "depthwise",
+            "normalize_kernel",
+            "normalize_output",
+            "same_kernel_per_channel",
+        )
+
+
+def build_randconv_transform(config: dict) -> RandConvTransform:
+    return RandConvTransform(
+        kernel_sizes=config.get("kernel_sizes", RANDCONV_DEFAULTS["kernel_sizes"]),
+        mix_alpha_min=config.get("mix_alpha_min", RANDCONV_DEFAULTS["mix_alpha_min"]),
+        mix_alpha_max=config.get("mix_alpha_max", RANDCONV_DEFAULTS["mix_alpha_max"]),
+        depthwise=config.get("depthwise", RANDCONV_DEFAULTS["depthwise"]),
+        normalize_kernel=config.get("normalize_kernel", RANDCONV_DEFAULTS["normalize_kernel"]),
+        normalize_output=config.get("normalize_output", RANDCONV_DEFAULTS["normalize_output"]),
+        same_kernel_per_channel=config.get("same_kernel_per_channel", RANDCONV_DEFAULTS["same_kernel_per_channel"]),
+        p=config.get("p", RANDCONV_DEFAULTS["p"]),
+    )
 
 
 def _strong_color_transforms(config: dict) -> list:
@@ -108,6 +193,7 @@ def build_robust_train_transforms(image_size: int, augmentation: dict | None) ->
     augmentation = augmentation or {}
     strong = augmentation.get("strong_style", {})
     fourier = augmentation.get("fourier", {})
+    randconv = augmentation.get("randconv", {})
 
     transforms = [
         A.Resize(image_size, image_size),
@@ -127,6 +213,9 @@ def build_robust_train_transforms(image_size: int, augmentation: dict | None) ->
             low_freq_only=fourier.get("low_freq_only", FOURIER_DEFAULTS["low_freq_only"]),
             p=fourier.get("p", FOURIER_DEFAULTS["p"]),
         ))
+
+    if randconv.get("enabled", False):
+        transforms.append(build_randconv_transform(randconv))
 
     transforms += [A.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD), ToTensorV2()]
     return A.Compose(transforms)
