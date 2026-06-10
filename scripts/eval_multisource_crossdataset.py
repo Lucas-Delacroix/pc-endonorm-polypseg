@@ -313,6 +313,7 @@ def write_master_comparison(tables_dir: Path) -> Path:
             rows.append(row)
 
     output_path = tables_dir / "master_crossdataset_comparison.csv"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = ["train_protocol", "test_dataset", *METRIC_FIELDS, "n_evaluated", "n_missing"]
     with open(output_path, "w", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
