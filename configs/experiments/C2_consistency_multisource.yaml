@@ -91,4 +91,4 @@ dataset:
         split: all
 
 logging:
-  run_name: MS_consistency
+  run_name: C2_consistency_multisource
