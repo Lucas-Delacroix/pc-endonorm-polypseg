@@ -24,6 +24,7 @@ class MultiSourcePolypDataModule:
         pin_memory: bool = True,
         augmentation: dict | None = None,
         base_dir: str | None = None,
+        consistency: dict | None = None,
     ):
         self.dataset_config = dataset_config
         self.image_size = image_size
@@ -32,6 +33,7 @@ class MultiSourcePolypDataModule:
         self.pin_memory = pin_memory
         self.augmentation = augmentation
         self.base_dir = base_dir
+        self.consistency = consistency
 
         self._train_dataset = None
         self._val_dataset = None
@@ -39,6 +41,9 @@ class MultiSourcePolypDataModule:
         self._split_descriptions = {}
 
     def _train_transform(self):
+        if self.consistency and self.consistency.get("enabled"):
+            from data.datasets.consistency import ConsistencyViews
+            return ConsistencyViews(self.image_size, self.augmentation)
         if self.augmentation:
             return build_robust_train_transforms(self.image_size, self.augmentation)
         return get_train_transforms(self.image_size)

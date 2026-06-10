@@ -7,7 +7,7 @@ MS_CONFIG ?= configs/experiments/$(MS_EXP).yaml
 MS_CHECKPOINT ?= results/$(MS_EXP)/best.pth
 MS_DEVICE ?= auto
 CROSS_SUBSETS ?= cvc-clinicdb cvc-colondb etis-larib
-MULTISOURCE_EXPERIMENTS := MS_baseline_rgb
+MULTISOURCE_EXPERIMENTS := MS_baseline_rgb MS_consistency
 
 .PHONY: setup train predict table2 evaluate baseline exp cross train-ms eval-ms smoke-ms-train smoke-ms-eval smoke-ms ms
 

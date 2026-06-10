@@ -205,8 +205,16 @@ class SegmentationSourceDataset(Dataset):
         image = self._read_rgb(image_path)
         mask = self._read_mask(mask_path)
 
-        if self.transform:
+        metadata = {
+            "image_path": image_path,
+            "mask_path": mask_path,
+            "dataset_name": self.dataset_name,
+        }
+
+        if self.transform is not None:
             augmented = self.transform(image=image, mask=mask)
+            if "image_weak" in augmented:
+                return {**augmented, **metadata}
             image = augmented["image"]
             mask = augmented["mask"]
 
@@ -217,13 +225,7 @@ class SegmentationSourceDataset(Dataset):
         elif isinstance(mask, torch.Tensor) and mask.ndim == 2:
             mask = mask.unsqueeze(0).float()
 
-        return {
-            "image": image,
-            "mask": mask.float(),
-            "image_path": image_path,
-            "mask_path": mask_path,
-            "dataset_name": self.dataset_name,
-        }
+        return {"image": image, "mask": mask.float(), **metadata}
 
 
 class MultiSourceSegmentationDataset(Dataset):

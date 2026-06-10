@@ -50,6 +50,7 @@ def build_datamodule(config: dict, args, multi_source: bool):
             pin_memory=data_config["pin_memory"],
             augmentation=config.get("augmentation"),
             base_dir=config["dataset"].get("base_dir"),
+            consistency=training_config.get("consistency"),
         )
 
     return PolypDataModule(
