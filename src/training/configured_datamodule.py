@@ -62,18 +62,22 @@ def build_datamodule(config: dict, args, multi_source: bool):
         input_mode=data_config.get("input_mode", "rgb"),
         preprocessed_root=data_config.get("preprocessed_root"),
         augmentation=config.get("augmentation"),
+        consistency=training_config.get("consistency"),
     )
 
 
 def smoke_check_batch(loader) -> None:
     batch = next(iter(loader))
-    image_shape = tuple(batch["image"].shape)
+    image_key = "image" if "image" in batch else "image_weak"
+    image_shape = tuple(batch[image_key].shape)
     mask_shape = tuple(batch["mask"].shape)
     if len(image_shape) != 4 or image_shape[1] != 3:
         raise AssertionError(f"Expected image batch Bx3xHxW, got {image_shape}")
     if len(mask_shape) != 4 or mask_shape[1] != 1:
         raise AssertionError(f"Expected mask batch Bx1xHxW, got {mask_shape}")
-    print(f"Smoke batch image shape: {image_shape}")
+    print(f"Smoke batch {image_key} shape: {image_shape}")
+    if "image_strong" in batch:
+        print(f"Smoke batch image_strong shape: {tuple(batch['image_strong'].shape)}")
     print(f"Smoke batch mask shape:  {mask_shape}")
     if "dataset_name" in batch:
         print(f"Smoke batch dataset_name: {batch['dataset_name']}")

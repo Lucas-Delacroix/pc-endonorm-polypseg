@@ -219,3 +219,39 @@ def build_robust_train_transforms(image_size: int, augmentation: dict | None) ->
 
     transforms += [A.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD), ToTensorV2()]
     return A.Compose(transforms)
+
+
+def build_geometric_transforms(image_size: int) -> A.Compose:
+    return A.Compose([
+        A.Resize(image_size, image_size),
+        A.HorizontalFlip(p=0.5),
+        A.VerticalFlip(p=0.5),
+        A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.2, rotate_limit=10, p=0.5),
+        A.Perspective(scale=(0.05, 0.1), p=0.5),
+    ])
+
+
+def build_appearance_transforms(augmentation: dict | None) -> A.Compose:
+    augmentation = augmentation or {}
+    strong = augmentation.get("strong_style", {})
+    fourier = augmentation.get("fourier", {})
+    randconv = augmentation.get("randconv", {})
+
+    transforms = []
+    if strong.get("enabled", True):
+        transforms += _strong_color_transforms(strong)
+    if fourier.get("enabled", True):
+        transforms.append(FourierAmplitudeRandomization(
+            beta=fourier.get("beta", FOURIER_DEFAULTS["beta"]),
+            strength=fourier.get("strength", FOURIER_DEFAULTS["strength"]),
+            low_freq_only=fourier.get("low_freq_only", FOURIER_DEFAULTS["low_freq_only"]),
+            p=fourier.get("p", FOURIER_DEFAULTS["p"]),
+        ))
+    if randconv.get("enabled", False):
+        transforms.append(build_randconv_transform(randconv))
+
+    return A.Compose(transforms)
+
+
+def build_normalize_transforms() -> A.Compose:
+    return A.Compose([A.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD), ToTensorV2()])

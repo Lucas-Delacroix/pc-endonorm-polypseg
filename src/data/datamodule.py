@@ -21,6 +21,7 @@ class PolypDataModule:
         input_mode: str = "rgb",
         preprocessed_root: str | None = None,
         augmentation: dict | None = None,
+        consistency: dict | None = None,
     ):
         assert dataset_name in self.DATASETS, (
             f"Dataset '{dataset_name}' not recognized. "
@@ -36,6 +37,7 @@ class PolypDataModule:
         self.input_mode = input_mode
         self.preprocessed_root = preprocessed_root
         self.augmentation = augmentation
+        self.consistency = consistency
 
         self._train_dataset = None
         self._val_dataset = None
@@ -56,8 +58,21 @@ class PolypDataModule:
             return build_robust_train_transforms(self.image_size, self.augmentation)
         return get_train_transforms(self.image_size)
 
+    def _build_train_dataset(self):
+        if self.consistency and self.consistency.get("enabled"):
+            from data.datasets.consistency import ConsistencyKvasirDataset, ConsistencyViews
+            return ConsistencyKvasirDataset(
+                root=self.data_root,
+                split="train",
+                transform=ConsistencyViews(self.image_size, self.augmentation),
+                image_size=self.image_size,
+                input_mode="rgb",
+                preprocessed_root=self.preprocessed_root,
+            )
+        return self._build_dataset("train", self._train_transform())
+
     def setup(self):
-        self._train_dataset = self._build_dataset("train", self._train_transform())
+        self._train_dataset = self._build_train_dataset()
         self._val_dataset = self._build_dataset("val", get_val_transforms(self.image_size))
         self._test_dataset = self._build_dataset("test", get_val_transforms(self.image_size))
         self._log_split_info()

@@ -5,6 +5,7 @@ import torch.nn as nn
 from torch.optim.swa_utils import AveragedModel, SWALR
 from torch.utils.data import DataLoader
 from evaluation.metrics import compute_all_metrics
+from training.consistency import consistency_loss, soft_iou
 from training.ema import ModelEMA
 from training.losses import build_loss
 
@@ -39,6 +40,9 @@ class Trainer:
         self.optimizer = self._build_optimizer()
         self.scheduler = self._build_scheduler()
         self.epochs = self.config.get("epochs", 200)
+
+        consistency_config = config.get("consistency", {}) or {}
+        self.consistency_weight = float(consistency_config.get("consistency_weight", 1.0))
 
         ema_config = config.get("ema", {}) or {}
         self.use_ema = ema_config.get("enabled", False)
@@ -95,23 +99,46 @@ class Trainer:
             return None
         raise ValueError(f"Unrecognized scheduler '{name}'.")
 
+    def _segmentation_loss(self, preds, masks):
+        if isinstance(preds, (list, tuple)):
+            return sum(self.loss_fn(p, masks) for p in preds), preds[0]
+        return self.loss_fn(preds, masks), preds
+
+    def _supervised_step(self, batch):
+        masks = batch["mask"].to(self.device)
+        preds = self.model(batch["image"].to(self.device))
+        loss, main_pred = self._segmentation_loss(preds, masks)
+        return loss, main_pred, masks
+
+    def _consistency_step(self, batch):
+        masks = batch["mask"].to(self.device)
+        weak = batch["image_weak"].to(self.device)
+        strong = batch["image_strong"].to(self.device)
+
+        seg_loss, weak_main = self._segmentation_loss(self.model(weak), masks)
+        strong_preds = self.model(strong)
+        strong_main = strong_preds[0] if isinstance(strong_preds, (list, tuple)) else strong_preds
+
+        weak_probability = torch.sigmoid(weak_main)
+        strong_probability = torch.sigmoid(strong_main)
+
+        weight = soft_iou(weak_probability.detach(), masks)
+        consistency = consistency_loss(strong_probability, weak_probability.detach())
+        loss = (1.0 - weight) * seg_loss + weight * self.consistency_weight * consistency
+        return loss, weak_main, masks
+
     def _train_epoch(self) -> dict:
         self.model.train()
         total_loss = 0.0
         total_dice = 0.0
 
         for batch in self.train_loader:
-            images = batch["image"].to(self.device)
-            masks = batch["mask"].to(self.device)
-
             self.optimizer.zero_grad()
-            preds = self.model(images)
 
-            if isinstance(preds, (list, tuple)):
-                loss = sum(self.loss_fn(p, masks) for p in preds)
-                preds = preds[0]
+            if "image_weak" in batch:
+                loss, main_pred, masks = self._consistency_step(batch)
             else:
-                loss = self.loss_fn(preds, masks)
+                loss, main_pred, masks = self._supervised_step(batch)
 
             loss.backward()
             self.optimizer.step()
@@ -120,7 +147,7 @@ class Trainer:
                 self.ema.update(self.model)
 
             with torch.no_grad():
-                binary_preds = (torch.sigmoid(preds) > 0.5).float()
+                binary_preds = (torch.sigmoid(main_pred) > 0.5).float()
                 total_dice += compute_all_metrics(binary_preds.cpu(), masks.cpu())["dice"]
 
             total_loss += loss.item()
