@@ -29,7 +29,9 @@ REQUIRED_EXPERIMENTS = (
     "I_aug_combo",
     "K_robust_full",
     "K3_robust_balanced_tversky",
+    "C1_consistency",
     "MS_baseline_rgb",
+    "C2_consistency_multisource",
 )
 REQUIRED_DATASETS = ("Kvasir", "CVC-ColonDB", "ETIS-Larib")
 OUTPUT_DATASET_KEYS = {
