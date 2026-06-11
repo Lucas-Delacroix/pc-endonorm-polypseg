@@ -1,0 +1,21 @@
+defaults:
+  - ../base
+
+model:
+  model_type: b2
+  in_channels: 3
+  pretrained_path: weights/mit_b2.pth
+
+data:
+  input_mode: rgb
+
+training:
+  loss: structure
+  distillation:
+    enabled: true
+    model_name: dinov2_vits14
+    teacher_image_size: 350
+    weight: 1.0
+
+logging:
+  run_name: FD1_dino_distill
