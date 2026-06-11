@@ -25,6 +25,7 @@ except ModuleNotFoundError:
 
 REQUIRED_EXPERIMENTS = (
     "A_baseline_rgb",
+    "B2_clahe_replace",
     "F_pc_endonorm",
     "I_aug_combo",
     "K_robust_full",

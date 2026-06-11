@@ -11,6 +11,7 @@ from data.transforms.augmentation import get_geometric_transforms, get_photometr
 
 MODE_COMPONENTS = {
     "rgb": ("rgb",),
+    "clahe": ("clahe",),
     "rgb_clahe": ("rgb", "clahe"),
     "rgb_norm": ("rgb", "norm"),
     "rgb_phase": ("rgb", "phase"),
@@ -193,12 +194,13 @@ class KvasirDataset(BaseDataset):
 
         out = self.geometric(**targets)
 
-        layers = [out["image"]]
+        layers = []
         for name in self.components:
             if name == "rgb":
-                continue
-            layer = out[name]
-            layers.append(layer if layer.ndim == 3 else layer[..., None])
+                layers.append(out["image"])
+            else:
+                layer = out[name]
+                layers.append(layer if layer.ndim == 3 else layer[..., None])
 
         stacked = (np.concatenate(layers, axis=2) - self.mean) / self.std
 
