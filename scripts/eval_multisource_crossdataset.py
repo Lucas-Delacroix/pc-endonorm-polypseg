@@ -30,8 +30,10 @@ REQUIRED_EXPERIMENTS = (
     "K_robust_full",
     "K3_robust_balanced_tversky",
     "C1_consistency",
+    "FD1_dino_distill",
     "MS_baseline_rgb",
     "C2_consistency_multisource",
+    "FD2_dino_distill_multisource",
 )
 REQUIRED_DATASETS = ("Kvasir", "CVC-ColonDB", "ETIS-Larib")
 OUTPUT_DATASET_KEYS = {
