@@ -12,12 +12,18 @@ from data.datasets.kvasir import KvasirDataset
 from data.transforms.augmentation import get_val_transforms
 from models import get_model
 from scripts.train import load_config
+from training.configured_datamodule import checkpoint_dir_for, is_multisource_config
 
 DEFAULT_CONFIG = "configs/models/esfpnet.yaml"
 DEFAULT_DATA_ROOT = "data/raw/kvasir-seg"
 DEFAULT_SPLIT = "test"
 DEFAULT_OUTPUT_ROOT = "outputs/predictions"
 PROBABILITY_SCALE = 255
+
+
+def default_checkpoint_path(config: dict) -> Path:
+    multi_source = is_multisource_config(config)
+    return checkpoint_dir_for(config, multi_source) / "best.pth"
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,8 +86,8 @@ def main() -> None:
     run_name = config["logging"]["run_name"]
     image_size = config["data"]["image_size"]
 
-    checkpoint_path = Path(
-        args.checkpoint or Path("checkpoints") / run_name / "best.pth"
+    checkpoint_path = (
+        Path(args.checkpoint) if args.checkpoint else default_checkpoint_path(config)
     )
     if not checkpoint_path.exists():
         raise FileNotFoundError(

@@ -1,6 +1,6 @@
 UV ?= uv
 CONFIG ?= configs/models/esfpnet.yaml
-EXP ?=
+EXP ?= $(exp)
 RUN_CONFIG = $(if $(EXP),configs/experiments/$(EXP).yaml,$(CONFIG))
 MS_EXP ?= $(if $(EXP),$(EXP),MS_baseline_rgb)
 MS_CONFIG ?= configs/experiments/$(MS_EXP).yaml
@@ -8,6 +8,8 @@ MS_CHECKPOINT ?= results/$(MS_EXP)/best.pth
 MS_DEVICE ?= auto
 CROSS_SUBSETS ?= cvc-clinicdb cvc-colondb etis-larib
 MULTISOURCE_EXPERIMENTS := MS_baseline_rgb C2_consistency_multisource FD2_dino_distill_multisource
+
+.DEFAULT_GOAL := $(if $(EXP),exp,setup)
 
 .PHONY: setup train predict table2 evaluate baseline exp cross train-ms eval-ms smoke-ms-train smoke-ms-eval smoke-ms ms
 
