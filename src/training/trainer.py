@@ -2,10 +2,12 @@ import time
 from pathlib import Path
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.optim.swa_utils import AveragedModel, SWALR
 from torch.utils.data import DataLoader
 from evaluation.metrics import compute_all_metrics
 from training.consistency import consistency_loss, soft_iou
+from training.dino_teacher import DinoTeacher, feature_distillation_loss
 from training.ema import ModelEMA
 from training.losses import build_loss
 
@@ -37,6 +39,22 @@ class Trainer:
         self.model = self.model.to(self.device)
 
         self.loss_fn = build_loss(config.get("loss", "structure"))
+
+        distillation_config = config.get("distillation", {}) or {}
+        self.use_distillation = distillation_config.get("enabled", False)
+        if self.use_distillation:
+            self.teacher = DinoTeacher(
+                model_name=distillation_config.get("model_name", "dinov2_vits14"),
+                image_size=distillation_config.get("teacher_image_size", 350),
+                device=self.device,
+            )
+            student_dim = self.model.backbone.embed_dims[-1]
+            self.distill_head = nn.Conv2d(student_dim, self.teacher.embed_dim, kernel_size=1).to(self.device)
+            self.distill_weight = float(distillation_config.get("weight", 1.0))
+        else:
+            self.teacher = None
+            self.distill_head = None
+
         self.optimizer = self._build_optimizer()
         self.scheduler = self._build_scheduler()
         self.epochs = self.config.get("epochs", 200)
@@ -66,18 +84,25 @@ class Trainer:
         self.best_ema_dice = float("-inf")
         self.history = []
 
+    def _trainable_parameters(self) -> list:
+        parameters = list(self.model.parameters())
+        if self.distill_head is not None:
+            parameters += list(self.distill_head.parameters())
+        return parameters
+
     def _build_optimizer(self) -> torch.optim.Optimizer:
         opt_config = self.config.get("optimizer", {})
         name = opt_config.get("name", "adam").lower()
         lr = float(opt_config.get("lr", 1e-4))
         weight_decay = float(opt_config.get("weight_decay", 1e-5))
+        parameters = self._trainable_parameters()
 
         if name == "adam":
-            return torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+            return torch.optim.Adam(parameters, lr=lr, weight_decay=weight_decay)
         if name == "adamw":
-            return torch.optim.AdamW(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+            return torch.optim.AdamW(parameters, lr=lr, weight_decay=weight_decay)
         if name == "sgd":
-            return torch.optim.SGD(self.model.parameters(), lr=lr, weight_decay=weight_decay, momentum=0.9)
+            return torch.optim.SGD(parameters, lr=lr, weight_decay=weight_decay, momentum=0.9)
         raise ValueError(f"Unrecognized optimizer '{name}'.")
 
     def _build_scheduler(self):
@@ -104,10 +129,22 @@ class Trainer:
             return sum(self.loss_fn(p, masks) for p in preds), preds[0]
         return self.loss_fn(preds, masks), preds
 
+    def _distillation_loss(self, images, features):
+        student = self.distill_head(features[-1])
+        teacher = self.teacher.extract(images)
+        teacher = F.interpolate(teacher, size=student.shape[-2:], mode="bilinear", align_corners=False)
+        return feature_distillation_loss(student, teacher)
+
     def _supervised_step(self, batch):
         masks = batch["mask"].to(self.device)
-        preds = self.model(batch["image"].to(self.device))
-        loss, main_pred = self._segmentation_loss(preds, masks)
+        images = batch["image"].to(self.device)
+        if self.use_distillation:
+            preds, features = self.model(images, return_features=True)
+            loss, main_pred = self._segmentation_loss(preds, masks)
+            loss = loss + self.distill_weight * self._distillation_loss(images, features)
+        else:
+            preds = self.model(images)
+            loss, main_pred = self._segmentation_loss(preds, masks)
         return loss, main_pred, masks
 
     def _consistency_step(self, batch):

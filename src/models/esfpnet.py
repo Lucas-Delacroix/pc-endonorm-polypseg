@@ -514,10 +514,13 @@ class ESFPNet(BaseModel):
         if pretrained_path is not None:
             self.load_pretrained_encoder(pretrained_path)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_features: bool = False):
         output_size = x.shape[-2:]
         features = self.backbone(x)
-        return self.decoder(features, output_size)
+        output = self.decoder(features, output_size)
+        if return_features:
+            return output, features
+        return output
 
     def load_pretrained_encoder(self, checkpoint_path: str | Path) -> None:
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
