@@ -48,6 +48,16 @@ endif
 cross:
 	@$(UV) run python scripts/eval_cross_dataset.py $(if $(EXP),--experiments $(EXP),)
 
+CLF_METHOD ?= otsu
+
+classical:
+	@$(UV) run python -m scripts.classical_segmentation --method $(CLF_METHOD)
+	@$(UV) run python -m scripts.classical_segmentation --method $(CLF_METHOD) --external --data-root data/raw/cvc-colondb --output-root outputs/predictions_cross/cvc-colondb
+	@$(UV) run python -m scripts.classical_segmentation --method $(CLF_METHOD) --external --data-root data/raw/etis-larib --output-root outputs/predictions_cross/etis-larib
+	@$(UV) run python -m scripts.evaluate_predictions
+	@$(UV) run python -m scripts.evaluate_predictions --external --data-root data/raw/cvc-colondb --predictions-root outputs/predictions_cross/cvc-colondb --output-name table2_cvc-colondb
+	@$(UV) run python -m scripts.evaluate_predictions --external --data-root data/raw/etis-larib --predictions-root outputs/predictions_cross/etis-larib --output-name table2_etis-larib
+
 train-ms:
 	@$(UV) run python scripts/train.py --config $(MS_CONFIG)
 
