@@ -198,4 +198,3 @@ def reliability_rows(
     probabilities = sigmoid_temperature(logits, temperature)
     _, bins = calibration_bins(probabilities, targets.astype(np.float32), ece_bins)
     return [bin_value.__dict__ for bin_value in bins]
-
