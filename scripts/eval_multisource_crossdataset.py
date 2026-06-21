@@ -27,6 +27,7 @@ REQUIRED_EXPERIMENTS = (
     "A_baseline_rgb",
     "B2_clahe_replace",
     "F_pc_endonorm",
+    "G_aug_jitter",
     "I_aug_combo",
     "K_robust_full",
     "K3_robust_balanced_tversky",
@@ -71,7 +72,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="auto")
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--smoke_test", action="store_true")
-    parser.add_argument("--no-optional", action="store_true")
     return parser.parse_args()
 
 
@@ -142,13 +142,12 @@ def optional_sources(config: dict) -> list[dict]:
     return sources
 
 
-def build_eval_datasets(config: dict, include_optional: bool) -> dict[str, object]:
+def build_eval_datasets(config: dict) -> dict[str, object]:
     split_config = config["dataset"].get("split", {})
     transform = get_val_transforms(config["data"]["image_size"])
     sources = source_list(config["dataset"]["test"])
-    if include_optional:
-        existing = {source["name"] for source in sources}
-        sources.extend(source for source in optional_sources(config) if source["name"] not in existing)
+    existing = {source["name"] for source in sources}
+    sources.extend(source for source in optional_sources(config) if source["name"] not in existing)
 
     datasets = {}
     for source in sources:
@@ -341,7 +340,7 @@ def main() -> None:
     print(f"Device: {device}")
     print(f"Checkpoint: {checkpoint}")
 
-    datasets = build_eval_datasets(config, include_optional=not args.no_optional)
+    datasets = build_eval_datasets(config)
     train_dataset = build_train_dataset_for_leakage(config)
     leakage_path = tables_dir / f"{run_name}_leakage_check.csv"
     write_leakage_report(train_dataset, datasets, leakage_path, train_protocol=run_name)

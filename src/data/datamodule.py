@@ -6,13 +6,8 @@ from data.transforms.robust_style import build_robust_train_transforms
 
 
 class PolypDataModule:
-    DATASETS = {
-        "kvasir": KvasirDataset,
-    }
-
     def __init__(
         self,
-        dataset_name: str,
         data_root: str,
         image_size: int = 352,
         batch_size: int = 8,
@@ -23,12 +18,6 @@ class PolypDataModule:
         augmentation: dict | None = None,
         consistency: dict | None = None,
     ):
-        assert dataset_name in self.DATASETS, (
-            f"Dataset '{dataset_name}' not recognized. "
-            f"Options: {list(self.DATASETS.keys())}"
-        )
-
-        self.dataset_cls = self.DATASETS[dataset_name]
         self.data_root = data_root
         self.image_size = image_size
         self.batch_size = batch_size
@@ -44,7 +33,7 @@ class PolypDataModule:
         self._test_dataset = None
 
     def _build_dataset(self, split, transform):
-        return self.dataset_cls(
+        return KvasirDataset(
             root=self.data_root,
             split=split,
             transform=transform,

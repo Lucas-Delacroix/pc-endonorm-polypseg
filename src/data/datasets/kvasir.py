@@ -12,10 +12,6 @@ from data.transforms.augmentation import get_geometric_transforms, get_photometr
 MODE_COMPONENTS = {
     "rgb": ("rgb",),
     "clahe": ("clahe",),
-    "rgb_clahe": ("rgb", "clahe"),
-    "rgb_norm": ("rgb", "norm"),
-    "rgb_phase": ("rgb", "phase"),
-    "rgb_norm_phase": ("rgb", "norm", "phase"),
     "rgb_norm_phase_morph": ("rgb", "norm", "phase", "morph"),
 }
 

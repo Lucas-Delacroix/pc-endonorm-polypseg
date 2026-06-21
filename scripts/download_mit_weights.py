@@ -7,14 +7,7 @@ from urllib.request import Request, urlopen
 import torch
 
 
-MIT_DEPTHS = {
-    "b0": [2, 2, 2, 2],
-    "b1": [2, 2, 2, 2],
-    "b2": [3, 4, 6, 3],
-    "b3": [3, 4, 18, 3],
-    "b4": [3, 8, 27, 3],
-    "b5": [3, 6, 40, 3],
-}
+MIT_DEPTHS = {"b2": [3, 4, 6, 3]}
 
 
 DEFAULT_HF_URL = "https://huggingface.co/nvidia/mit-{model_type}/resolve/main/pytorch_model.bin"

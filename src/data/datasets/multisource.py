@@ -80,13 +80,7 @@ def split_key(source: dict, images_dir: Path, masks_dir: Path) -> str:
 
 def load_split_selection(split_file: Path, split: str) -> list[int | str]:
     with open(split_file) as file:
-        payload = json.load(file)
-    if split not in payload:
-        raise KeyError(f"Split '{split}' not found in {split_file}")
-    selection = payload[split]
-    if not isinstance(selection, list):
-        raise TypeError(f"Split '{split}' in {split_file} must be a list.")
-    return selection
+        return json.load(file)[split]
 
 
 def select_from_split_file(
@@ -127,8 +121,6 @@ def random_split_indices(total: int, split_config: dict, key: str) -> dict[str, 
     test_ratio = float(split_config.get("test_ratio", max(0.0, 1.0 - train_ratio - val_ratio)))
 
     ratio_sum = train_ratio + val_ratio + test_ratio
-    if ratio_sum <= 0:
-        raise ValueError("Random split ratios must sum to a positive value.")
     train_ratio /= ratio_sum
     val_ratio /= ratio_sum
 
@@ -230,8 +222,6 @@ class SegmentationSourceDataset(Dataset):
 
 class MultiSourceSegmentationDataset(Dataset):
     def __init__(self, datasets: list[SegmentationSourceDataset]):
-        if not datasets:
-            raise ValueError("At least one source dataset is required.")
         self.datasets = datasets
         self.cumulative_sizes = []
         total = 0
@@ -264,8 +254,6 @@ def build_source_dataset(
     split_config: dict | None = None,
     base_dir: str | Path | None = None,
 ) -> tuple[SegmentationSourceDataset, str]:
-    if "name" not in source:
-        raise ValueError("Every source must define a name.")
     images_dir, masks_dir = source_dirs(source, base_dir)
     pairs = list_image_mask_pairs(images_dir, masks_dir)
     selected, split_description = select_pairs_for_split(pairs, source, split_config, images_dir, masks_dir)

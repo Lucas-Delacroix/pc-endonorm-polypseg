@@ -43,22 +43,9 @@ class KvasirDownloader(DatasetDownloader):
         images_dir = self.dataset_dir / "images"
         masks_dir = self.dataset_dir / "masks"
 
-        if not self.dataset_dir.exists():
-            raise FileNotFoundError(f"Dataset directory not found: {self.dataset_dir}")
-        if not images_dir.is_dir():
-            raise FileNotFoundError(f"Images directory not found: {images_dir}")
-        if not masks_dir.is_dir():
-            raise FileNotFoundError(f"Masks directory not found: {masks_dir}")
-
         images = sorted(images_dir.glob("*.jpg"))
-        masks = sorted(masks_dir.glob("*.jpg"))
-
         if not images:
             raise ValueError(f"No .jpg images found in {images_dir}")
-        if len(images) != len(masks):
-            raise ValueError(
-                f"Image/mask count mismatch: {len(images)} images and {len(masks)} masks."
-            )
         if len(images) != self.expected_samples:
             raise ValueError(
                 f"Expected {self.expected_samples} Kvasir-SEG samples, found {len(images)}."
@@ -85,9 +72,6 @@ class KvasirDownloader(DatasetDownloader):
         )
 
     def _extract_zip(self, archive_path: Path, output_dir: Path) -> None:
-        if not archive_path.exists():
-            raise FileNotFoundError(f"Archive not found: {archive_path}")
-
         with zipfile.ZipFile(archive_path) as archive:
             for member in archive.infolist():
                 target_path = output_dir / member.filename

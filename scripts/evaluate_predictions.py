@@ -9,8 +9,6 @@ import cv2
 import numpy as np
 from scipy.ndimage import binary_erosion, distance_transform_edt
 
-from postprocessing.connected_components import connected_component_filter
-
 
 MODEL_NAMES = {"esfpnet": "ESFPNet"}
 HD95_PERCENTILE = 95
@@ -29,9 +27,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", default="outputs/tables")
     parser.add_argument("--output-name", default="table2")
     parser.add_argument("--external", action="store_true")
-    parser.add_argument("--postprocess-cc", action="store_true")
-    parser.add_argument("--cc-min-area-ratio", type=float, default=0.0005)
-    parser.add_argument("--cc-keep-largest", action="store_true")
     parser.add_argument("--allow-missing", action="store_true")
     return parser.parse_args()
 
@@ -148,7 +143,6 @@ def evaluate_model(
     samples: list[tuple[Path, Path]],
     threshold: float,
     allow_missing: bool,
-    postprocess=None,
 ) -> dict[str, float | int | str]:
     predictions = build_prediction_index(prediction_dir)
     totals = {"dice": 0.0, "iou": 0.0, "precision": 0.0, "recall": 0.0, "hd95": 0.0, "assd": 0.0, "boundary_f1": 0.0}
@@ -163,8 +157,6 @@ def evaluate_model(
 
         target = read_binary_mask(mask_path, threshold=0.5)
         prediction = read_binary_mask(prediction_path, threshold=threshold, target_shape=target.shape)
-        if postprocess is not None:
-            prediction = postprocess(prediction)
         metrics = metric_values(prediction, target)
         metrics.update(boundary_metrics(prediction, target))
 
@@ -251,15 +243,9 @@ def main() -> None:
     split_file = Path(args.split_file)
     output_dir = Path(args.output_dir)
 
-    postprocess = None
-    if args.postprocess_cc:
-        postprocess = lambda mask: connected_component_filter(
-            mask, args.cc_min_area_ratio, args.cc_keep_largest
-        )
-
     samples = load_samples(data_root, split_file, args.split, args.external)
     rows = [
-        evaluate_model(path, samples, args.threshold, args.allow_missing, postprocess)
+        evaluate_model(path, samples, args.threshold, args.allow_missing)
         for path in model_dirs(predictions_root, args.models)
     ]
     rows.sort(key=lambda row: row["dice"], reverse=True)

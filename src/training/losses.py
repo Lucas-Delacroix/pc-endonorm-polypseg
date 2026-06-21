@@ -2,82 +2,53 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+DICE_SMOOTH = 1e-6
+STRUCTURE_SMOOTH = 1.0
+EDGE_WEIGHT = 5
+EDGE_KERNEL = 15
+EDGE_PADDING = 7
+
 
 class DiceLoss(nn.Module):
-    def __init__(self, smooth: float = 1e-6):
-        super().__init__()
-        self.smooth = smooth
-
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        pred = torch.sigmoid(pred)
-        pred = pred.contiguous().view(-1)
+        pred = torch.sigmoid(pred).contiguous().view(-1)
         target = target.contiguous().view(-1)
-
-        intersection = (pred * target).sum()
-        loss = 1 - (2.0 * intersection + self.smooth) / (
-            pred.sum() + target.sum() + self.smooth
-        )
-        return loss
-
-
-class BCEDiceLoss(nn.Module):
-    def __init__(self, bce_weight: float = 0.5, dice_weight: float = 0.5):
-        super().__init__()
-        self.bce_weight = bce_weight
-        self.dice_weight = dice_weight
-        self.bce = nn.BCEWithLogitsLoss()
-        self.dice = DiceLoss()
-
-    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        bce_loss = self.bce(pred, target)
-        dice_loss = self.dice(pred, target)
-        return self.bce_weight * bce_loss + self.dice_weight * dice_loss
+        overlap = (pred * target).sum()
+        score = (2.0 * overlap + DICE_SMOOTH) / (pred.sum() + target.sum() + DICE_SMOOTH)
+        return 1.0 - score
 
 
 class StructureLoss(nn.Module):
-    def __init__(self, smooth: float = 1.0):
-        super().__init__()
-        self.smooth = smooth
-
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        weight = 1 + 5 * torch.abs(
-            F.avg_pool2d(target, kernel_size=15, stride=1, padding=7) - target
-        )
+        edge = F.avg_pool2d(target, kernel_size=EDGE_KERNEL, stride=1, padding=EDGE_PADDING) - target
+        weight = 1.0 + EDGE_WEIGHT * torch.abs(edge)
+
         bce = F.binary_cross_entropy_with_logits(pred, target, reduction="none")
-        weighted_bce = (weight * bce).sum(dim=(2, 3)) / weight.sum(dim=(2, 3))
+        bce = (weight * bce).sum(dim=(2, 3)) / weight.sum(dim=(2, 3))
 
-        pred_sigmoid = torch.sigmoid(pred)
-        inter = (pred_sigmoid * target * weight).sum(dim=(2, 3))
-        union = ((pred_sigmoid + target) * weight).sum(dim=(2, 3))
-        weighted_iou = 1 - (inter + self.smooth) / (union - inter + self.smooth)
-
-        loss = (weighted_bce + weighted_iou).mean()
-        return loss
+        prob = torch.sigmoid(pred)
+        overlap = (prob * target * weight).sum(dim=(2, 3))
+        union = ((prob + target) * weight).sum(dim=(2, 3))
+        wiou = 1.0 - (overlap + STRUCTURE_SMOOTH) / (union - overlap + STRUCTURE_SMOOTH)
+        return (bce + wiou).mean()
 
 
 class FocalTverskyLoss(nn.Module):
-    ALPHA_PENALIZES = "false_positives"
-    BETA_PENALIZES = "false_negatives"
-
-    def __init__(self, alpha: float = 0.7, beta: float = 0.3, gamma: float = 0.75, smooth: float = 1e-6):
+    def __init__(self, alpha: float = 0.7, beta: float = 0.3, gamma: float = 0.75):
         super().__init__()
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
-        self.smooth = smooth
 
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         pred = torch.sigmoid(pred).contiguous().view(-1)
         target = target.contiguous().view(-1)
 
-        true_positive = (pred * target).sum()
-        false_positive = (pred * (1 - target)).sum()
-        false_negative = ((1 - pred) * target).sum()
-
-        tversky = (true_positive + self.smooth) / (
-            true_positive + self.alpha * false_positive + self.beta * false_negative + self.smooth
-        )
-        return torch.pow(1 - tversky, self.gamma)
+        tp = (pred * target).sum()
+        fp = (pred * (1.0 - target)).sum()
+        fn = ((1.0 - pred) * target).sum()
+        score = (tp + DICE_SMOOTH) / (tp + self.alpha * fp + self.beta * fn + DICE_SMOOTH)
+        return torch.pow(1.0 - score, self.gamma)
 
 
 class CombinedLoss(nn.Module):
@@ -104,25 +75,12 @@ class CombinedLoss(nn.Module):
         )
 
 
-LOSSES = {
-    "bce_dice": BCEDiceLoss,
-    "dice": DiceLoss,
-    "structure": StructureLoss,
-    "focal_tversky": FocalTverskyLoss,
-    "combined": CombinedLoss,
-}
-
-
-def get_loss(name: str, **kwargs) -> nn.Module:
-    assert name in LOSSES, (
-        f"Loss '{name}' não reconhecida. Opções: {list(LOSSES.keys())}"
-    )
-    return LOSSES[name](**kwargs)
-
-
 def build_loss(config) -> nn.Module:
-    if isinstance(config, str):
-        return get_loss(config)
+    if config == "structure":
+        return StructureLoss()
+
     config = dict(config)
     name = config.pop("name")
-    return get_loss(name, **config)
+    if name == "combined":
+        return CombinedLoss(**config)
+    raise ValueError(f"Unknown loss: {name}")

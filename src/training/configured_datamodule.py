@@ -54,7 +54,6 @@ def build_datamodule(config: dict, args, multi_source: bool):
         )
 
     return PolypDataModule(
-        dataset_name=data_config["dataset"],
         data_root=args.data_root,
         image_size=data_config["image_size"],
         batch_size=training_config["batch_size"],
