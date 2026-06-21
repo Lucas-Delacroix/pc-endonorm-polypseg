@@ -1,36 +1,18 @@
 from __future__ import annotations
 
-import argparse
 import csv
-import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from experiments.recall_safe_calibration.metrics_calibration import reliability_rows  # noqa: E402
-from experiments.recall_safe_calibration.utils import read_json, read_prediction_cache  # noqa: E402
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Plot threshold curves and reliability diagrams.")
-    parser.add_argument("--sweep", required=True)
-    parser.add_argument("--val-cache", required=True)
-    parser.add_argument("--temperature", required=True)
-    parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--ece-bins", type=int, default=15)
-    return parser.parse_args()
+from experiments.recall_safe_calibration.metrics_calibration import reliability_rows
+from experiments.recall_safe_calibration.utils import read_json, read_prediction_cache
 
 
 def read_sweep(path: Path) -> list[dict[str, str]]:
     with open(path) as file:
         return list(csv.DictReader(file))
-
 
 def plot_threshold_metric(rows: list[dict[str, str]], metric: str, output_dir: Path) -> Path:
     variants = sorted({row["variant"] for row in rows})
@@ -52,7 +34,6 @@ def plot_threshold_metric(rows: list[dict[str, str]], metric: str, output_dir: P
     plt.savefig(path, dpi=160)
     plt.close()
     return path
-
 
 def plot_reliability(cache: dict, temperature: float, ece_bins: int, output_dir: Path) -> Path:
     variants = {
@@ -88,7 +69,6 @@ def plot_reliability(cache: dict, temperature: float, ece_bins: int, output_dir:
     plt.close()
     return path
 
-
 def plot_all(
     *,
     sweep_path: Path,
@@ -108,20 +88,3 @@ def plot_all(
     temperature = float(read_json(temperature_path)["temperature"])
     paths.append(plot_reliability(cache, temperature, ece_bins, output_dir))
     return paths
-
-
-def main() -> None:
-    args = parse_args()
-    paths = plot_all(
-        sweep_path=Path(args.sweep),
-        val_cache_path=Path(args.val_cache),
-        temperature_path=Path(args.temperature),
-        output_dir=Path(args.output_dir),
-        ece_bins=args.ece_bins,
-    )
-    for path in paths:
-        print(f"Saved plot: {path}")
-
-
-if __name__ == "__main__":
-    main()

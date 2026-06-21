@@ -134,17 +134,18 @@ def main() -> None:
         max_iter=args.max_temperature_iter,
         lr=args.temperature_lr,
     )
-    temp_args = argparse.Namespace(
-        config=args.config,
-        checkpoint=args.checkpoint,
-        ece_bins=args.ece_bins,
-        lesion_dilation=args.lesion_dilation,
-        lr=args.temperature_lr,
-        max_iter=args.max_temperature_iter,
-    )
     temperature_path = write_json(
         run_dir / "temperature.json",
-        temperature_payload(val_cache, fit, args=temp_args),
+        temperature_payload(
+            val_cache,
+            fit,
+            config_path=args.config,
+            checkpoint=args.checkpoint,
+            ece_bins=args.ece_bins,
+            lesion_dilation=args.lesion_dilation,
+            lr=args.temperature_lr,
+            max_iter=args.max_temperature_iter,
+        ),
     )
 
     print("Sweeping validation thresholds...")

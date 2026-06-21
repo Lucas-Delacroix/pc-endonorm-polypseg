@@ -145,22 +145,6 @@ def build_dataset(
     }
 
 
-def default_batch_size(config: dict[str, Any], explicit: int | None) -> int:
-    if explicit is not None:
-        return int(explicit)
-    return int(config.get("training", {}).get("batch_size", 8))
-
-
-def default_num_workers(config: dict[str, Any], explicit: int | None) -> int:
-    if explicit is not None:
-        return int(explicit)
-    return int(config.get("data", {}).get("num_workers", 0))
-
-
-def default_pin_memory(config: dict[str, Any], device: str) -> bool:
-    return bool(config.get("data", {}).get("pin_memory", False) and device == "cuda")
-
-
 def run_inference(
     model: torch.nn.Module,
     dataset,
@@ -244,20 +228,23 @@ def collect_predictions(
         image_size=image_size,
     )
     model = load_esfpnet_model(config, checkpoint_path, device)
+    batch = int(batch_size or config["training"]["batch_size"])
+    workers = int(num_workers if num_workers is not None else config["data"].get("num_workers", 0))
+    pin_memory = bool(config["data"].get("pin_memory", False) and device == "cuda")
     predictions = run_inference(
         model,
         dataset,
         device=device,
-        batch_size=default_batch_size(config, batch_size),
-        num_workers=default_num_workers(config, num_workers),
-        pin_memory=default_pin_memory(config, device),
+        batch_size=batch,
+        num_workers=workers,
+        pin_memory=pin_memory,
     )
     metadata = {
         "config_path": None,
         "checkpoint": str(checkpoint_path),
         "device": device,
-        "batch_size": default_batch_size(config, batch_size),
-        "num_workers": default_num_workers(config, num_workers),
+        "batch_size": batch,
+        "num_workers": workers,
         "n_images": int(predictions["targets"].shape[0]),
         "shape": list(predictions["targets"].shape),
         "dataset": dataset_info,
@@ -341,9 +328,3 @@ def unique_run_dir(root: Path, run_name: str) -> Path:
         suffix += 1
     candidate.mkdir(parents=True, exist_ok=False)
     return candidate
-
-
-def temperature_from_file(path: Path | None) -> float:
-    if path is None:
-        return 1.0
-    return float(read_json(path)["temperature"])

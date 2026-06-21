@@ -1,79 +1,15 @@
 from __future__ import annotations
 
-import argparse
 import csv
-import sys
 from pathlib import Path
 from typing import Any
 
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from experiments.recall_safe_calibration.metrics_calibration import compute_metrics  # noqa: E402
-from experiments.recall_safe_calibration.utils import (  # noqa: E402
-    DEFAULT_CONFIG,
-    collect_predictions,
-    ensure_new_file,
-    load_config,
-    parse_thresholds,
-    read_json,
-    read_prediction_cache,
-    write_json,
-    write_prediction_cache,
-)
+from experiments.recall_safe_calibration.metrics_calibration import compute_metrics
+from experiments.recall_safe_calibration.utils import ensure_new_file
 
 
 DICE_TOLERANCE = 0.01
 PRECISION_TOLERANCE = 0.05
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Sweep validation thresholds and select recall-safe points.")
-    parser.add_argument("--config", default=DEFAULT_CONFIG)
-    parser.add_argument("--checkpoint", default=None)
-    parser.add_argument("--cache", default=None, help="Optional .npz cache from collect_logits.py.")
-    parser.add_argument("--temperature", default=None)
-    parser.add_argument("--val-images", default=None)
-    parser.add_argument("--val-masks", default=None)
-    parser.add_argument("--val-source-name", default=None)
-    parser.add_argument("--val-split", default="all")
-    parser.add_argument("--image-size", type=int, default=None)
-    parser.add_argument("--batch-size", type=int, default=None)
-    parser.add_argument("--num-workers", type=int, default=None)
-    parser.add_argument("--device", default="auto")
-    parser.add_argument("--thresholds", nargs="*", default=None)
-    parser.add_argument("--ece-bins", type=int, default=15)
-    parser.add_argument("--lesion-dilation", type=int, default=0)
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--selected-output", default=None)
-    parser.add_argument("--cache-output", default=None)
-    parser.add_argument("--overwrite", action="store_true")
-    return parser.parse_args()
-
-
-def load_or_collect_validation(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, Any]:
-    if args.cache:
-        return read_prediction_cache(Path(args.cache))
-
-    predictions, metadata = collect_predictions(
-        config,
-        checkpoint=args.checkpoint,
-        role="val",
-        images_dir=args.val_images,
-        masks_dir=args.val_masks,
-        source_name=args.val_source_name,
-        split=args.val_split,
-        image_size=args.image_size,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        device_choice=args.device,
-    )
-    metadata["config_path"] = args.config
-    if args.cache_output:
-        write_prediction_cache(Path(args.cache_output), predictions, metadata, overwrite=args.overwrite)
-    return {**predictions, "metadata": metadata}
 
 
 def sweep_thresholds(
@@ -99,7 +35,6 @@ def sweep_thresholds(
             )
             rows.append({"variant": variant, **metrics})
     return rows
-
 
 def select_recall_safe_threshold(rows: list[dict[str, Any]], variant: str) -> dict[str, Any]:
     variant_rows = [row for row in rows if row["variant"] == variant]
@@ -150,7 +85,6 @@ def select_recall_safe_threshold(rows: list[dict[str, Any]], variant: str) -> di
         "selected_metrics": selected,
     }
 
-
 def write_sweep_csv(path: Path, rows: list[dict[str, Any]], *, overwrite: bool = False) -> None:
     ensure_new_file(path, overwrite=overwrite)
     fieldnames = [
@@ -179,7 +113,6 @@ def write_sweep_csv(path: Path, rows: list[dict[str, Any]], *, overwrite: bool =
         for row in rows:
             writer.writerow({key: row.get(key, "") for key in fieldnames})
 
-
 def build_selected_payload(
     rows: list[dict[str, Any]],
     *,
@@ -203,38 +136,3 @@ def build_selected_payload(
         },
         **selections,
     }
-
-
-def main() -> None:
-    args = parse_args()
-    config = load_config(args.config)
-    cache = load_or_collect_validation(args, config)
-    thresholds = parse_thresholds(args.thresholds)
-    variants = {"uncalibrated": 1.0}
-    if args.temperature:
-        variants["temperature_scaled"] = float(read_json(Path(args.temperature))["temperature"])
-
-    rows = sweep_thresholds(
-        cache["logits"],
-        cache["targets"],
-        thresholds=thresholds,
-        variants=variants,
-        ece_bins=args.ece_bins,
-        lesion_dilation=args.lesion_dilation,
-    )
-    output = Path(args.output)
-    write_sweep_csv(output, rows, overwrite=args.overwrite)
-    selected_output = Path(args.selected_output) if args.selected_output else output.with_name("selected_threshold.json")
-    payload = build_selected_payload(
-        rows,
-        thresholds=thresholds,
-        variants=variants,
-        cache_metadata=cache.get("metadata", {}),
-    )
-    write_json(selected_output, payload, overwrite=args.overwrite)
-    print(f"Threshold sweep saved to: {output}")
-    print(f"Selected thresholds saved to: {selected_output}")
-
-
-if __name__ == "__main__":
-    main()

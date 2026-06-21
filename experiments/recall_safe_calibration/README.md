@@ -49,9 +49,9 @@ make recall-safe-calibration \
   RECALL_TEST_MASKS=data/raw/etis-larib/masks
 ```
 
-## Scripts individuais
+## Script auxiliar
 
-Coletar logits/probabilidades/mascaras:
+`collect_logits.py` segue como CLI para gerar caches externos de logits, usado pelos scripts de verificacao:
 
 ```bash
 uv run python experiments/recall_safe_calibration/collect_logits.py \
@@ -61,32 +61,7 @@ uv run python experiments/recall_safe_calibration/collect_logits.py \
   --output outputs/recall_safe_calibration/val_predictions.npz
 ```
 
-Ajustar temperatura:
-
-```bash
-uv run python experiments/recall_safe_calibration/calibrate_temperature.py \
-  --cache outputs/recall_safe_calibration/val_predictions.npz \
-  --output outputs/recall_safe_calibration/temperature.json
-```
-
-Sweep de thresholds na validacao:
-
-```bash
-uv run python experiments/recall_safe_calibration/sweep_thresholds.py \
-  --cache outputs/recall_safe_calibration/val_predictions.npz \
-  --temperature outputs/recall_safe_calibration/temperature.json \
-  --output outputs/recall_safe_calibration/threshold_sweep.csv
-```
-
-Avaliar ETIS:
-
-```bash
-uv run python experiments/recall_safe_calibration/evaluate_calibrated.py \
-  --cache outputs/recall_safe_calibration/test_predictions.npz \
-  --temperature outputs/recall_safe_calibration/temperature.json \
-  --threshold outputs/recall_safe_calibration/selected_threshold.json \
-  --output outputs/recall_safe_calibration/etis_results.json
-```
+Temperatura, sweep, avaliacao e plots sao funcoes internas chamadas por `run_pipeline.py`.
 
 ## Regra do threshold recall-safe
 
