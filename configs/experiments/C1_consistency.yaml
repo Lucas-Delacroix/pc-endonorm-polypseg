@@ -6,7 +6,6 @@ augmentation:
   fourier: true
 
 training:
-  loss: structure
   consistency:
     enabled: true
     consistency_weight: 1.0

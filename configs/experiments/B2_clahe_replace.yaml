@@ -5,8 +5,5 @@ data:
   input_mode: clahe
   preprocessed_root: data/preprocessed/kvasir-seg
 
-training:
-  loss: structure
-
 logging:
   run_name: B2_clahe_replace

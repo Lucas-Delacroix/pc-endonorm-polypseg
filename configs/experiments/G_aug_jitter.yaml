@@ -5,8 +5,5 @@ augmentation:
   strong_style: true
   fourier: false
 
-training:
-  loss: structure
-
 logging:
   run_name: G_aug_jitter

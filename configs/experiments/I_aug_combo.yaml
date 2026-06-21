@@ -5,8 +5,5 @@ augmentation:
   strong_style: true
   fourier: true
 
-training:
-  loss: structure
-
 logging:
   run_name: I_aug_combo

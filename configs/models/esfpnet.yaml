@@ -1,17 +1,5 @@
 defaults:
   - ../base
 
-training:
-  epochs: 200
-  batch_size: 8
-  loss: structure
-  optimizer:
-    name: adam
-    lr: 1.0e-4
-    weight_decay: 1.0e-5
-  scheduler:
-    name: cosine
-    min_lr: 1.0e-6
-
 logging:
   run_name: esfpnet_b2_kvasir

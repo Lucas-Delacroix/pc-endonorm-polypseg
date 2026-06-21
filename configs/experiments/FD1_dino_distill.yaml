@@ -2,7 +2,6 @@ defaults:
   - ../base
 
 training:
-  loss: structure
   distillation:
     enabled: true
     model_name: dinov2_vits14

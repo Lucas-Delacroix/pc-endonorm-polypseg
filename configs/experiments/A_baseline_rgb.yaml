@@ -1,8 +1,5 @@
 defaults:
   - ../base
 
-training:
-  loss: structure
-
 logging:
   run_name: A_baseline_rgb

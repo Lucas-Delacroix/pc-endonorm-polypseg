@@ -8,8 +8,5 @@ data:
   input_mode: rgb_norm_phase_morph
   preprocessed_root: data/preprocessed/kvasir-seg
 
-training:
-  loss: structure
-
 logging:
   run_name: F_pc_endonorm
