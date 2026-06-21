@@ -1,14 +1,6 @@
 defaults:
   - ../base
 
-model:
-  model_type: b2
-  in_channels: 3
-  pretrained_path: weights/mit_b2.pth
-
-data:
-  input_mode: rgb
-
 training:
   loss: structure
 

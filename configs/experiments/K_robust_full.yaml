@@ -1,30 +1,9 @@
 defaults:
   - ../base
 
-model:
-  model_type: b2
-  in_channels: 3
-  pretrained_path: weights/mit_b2.pth
-
-data:
-  input_mode: rgb
-
 augmentation:
-  strong_style:
-    enabled: true
-    color_jitter: {enabled: true, brightness: 0.25, contrast: 0.25, saturation: 0.25, hue: 0.05, p: 0.8}
-    random_gamma: {enabled: true, gamma_limit: [70, 140], p: 0.5}
-    hue_saturation_value: {enabled: true, hue_shift_limit: 10, sat_shift_limit: 25, val_shift_limit: 20, p: 0.5}
-    gaussian_blur: {enabled: true, blur_limit: [3, 5], p: 0.2}
-    gaussian_noise: {enabled: true, p: 0.2}
-    motion_blur: {enabled: false}
-    grayscale: {enabled: false}
-  fourier:
-    enabled: true
-    p: 0.5
-    beta: 0.05
-    strength: 0.15
-    low_freq_only: true
+  strong_style: true
+  fourier: true
 
 training:
   optimizer: {name: adamw, lr: 1.0e-4, weight_decay: 1.0e-4}

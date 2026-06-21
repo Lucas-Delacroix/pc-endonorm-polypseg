@@ -35,8 +35,6 @@ setup:
 		--image-size 352 \
 		--config configs/preprocess_pc_endonorm.yaml
 	@$(UV) run python scripts/prepare_cross_datasets.py --subsets $(CROSS_SUBSETS)
-	@$(UV) run python -m scripts.debug_robust_augmentations
-	@$(UV) run python -m scripts.debug_robust_augmentations --config configs/experiments/K2_robust_full_randconv.yaml
 
 train:
 	@$(UV) run python scripts/train.py --config $(RUN_CONFIG)

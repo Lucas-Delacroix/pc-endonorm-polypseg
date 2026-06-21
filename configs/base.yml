@@ -7,6 +7,7 @@ paths:
 
 data:
   dataset: kvasir
+  input_mode: rgb
   image_size: 352
   split:
     train: 0.8
@@ -17,8 +18,10 @@ data:
 
 model:
   name: esfpnet
-  model_type: b0
+  model_type: b2
   num_classes: 1
+  in_channels: 3
+  pretrained_path: weights/mit_b2.pth
 
 training:
   epochs: 200
