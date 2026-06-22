@@ -10,35 +10,10 @@ from models.base_model import BaseModel
 
 
 MIT_CONFIGS = {
-    "b0": {
-        "embed_dims": [32, 64, 160, 256],
-        "num_heads": [1, 2, 5, 8],
-        "depths": [2, 2, 2, 2],
-    },
-    "b1": {
-        "embed_dims": [64, 128, 320, 512],
-        "num_heads": [1, 2, 5, 8],
-        "depths": [2, 2, 2, 2],
-    },
     "b2": {
         "embed_dims": [64, 128, 320, 512],
         "num_heads": [1, 2, 5, 8],
         "depths": [3, 4, 6, 3],
-    },
-    "b3": {
-        "embed_dims": [64, 128, 320, 512],
-        "num_heads": [1, 2, 5, 8],
-        "depths": [3, 4, 18, 3],
-    },
-    "b4": {
-        "embed_dims": [64, 128, 320, 512],
-        "num_heads": [1, 2, 5, 8],
-        "depths": [3, 8, 27, 3],
-    },
-    "b5": {
-        "embed_dims": [64, 128, 320, 512],
-        "num_heads": [1, 2, 5, 8],
-        "depths": [3, 6, 40, 3],
     },
 }
 
@@ -483,7 +458,7 @@ class ESFPNet(BaseModel):
     def __init__(
         self,
         num_classes: int = 1,
-        model_type: str = "b0",
+        model_type: str = "b2",
         in_channels: int = 3,
         pretrained_path: str | Path | None = None,
         drop_rate: float = 0.0,
@@ -514,10 +489,13 @@ class ESFPNet(BaseModel):
         if pretrained_path is not None:
             self.load_pretrained_encoder(pretrained_path)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_features: bool = False):
         output_size = x.shape[-2:]
         features = self.backbone(x)
-        return self.decoder(features, output_size)
+        output = self.decoder(features, output_size)
+        if return_features:
+            return output, features
+        return output
 
     def load_pretrained_encoder(self, checkpoint_path: str | Path) -> None:
         checkpoint = torch.load(checkpoint_path, map_location="cpu")

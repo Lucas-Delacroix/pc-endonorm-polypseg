@@ -1,0 +1,14 @@
+defaults:
+  - ../base
+
+augmentation:
+  strong_style: true
+  fourier: true
+
+training:
+  consistency:
+    enabled: true
+    consistency_weight: 1.0
+
+logging:
+  run_name: C1_consistency

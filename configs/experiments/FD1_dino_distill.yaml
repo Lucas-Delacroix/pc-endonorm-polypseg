@@ -1,0 +1,12 @@
+defaults:
+  - ../base
+
+training:
+  distillation:
+    enabled: true
+    model_name: dinov2_vits14
+    teacher_image_size: 350
+    weight: 1.0
+
+logging:
+  run_name: FD1_dino_distill

@@ -7,20 +7,20 @@ paths:
 
 data:
   dataset: kvasir
+  input_mode: rgb
   image_size: 352
-  split:
-    train: 0.8
-    val: 0.1
-    test: 0.1
   num_workers: 4
   pin_memory: true
 
 model:
   name: esfpnet
-  model_type: b0
+  model_type: b2
   num_classes: 1
+  in_channels: 3
+  pretrained_path: weights/mit_b2.pth
 
 training:
+  loss: structure
   epochs: 200
   batch_size: 8
   optimizer:
@@ -30,15 +30,6 @@ training:
   scheduler:
     name: cosine
     min_lr: 1.0e-6
-  save_best_metric: dice
-
-evaluation:
-  metrics:
-    - dice
-    - iou
-    - precision
-    - recall
 
 logging:
-  wandb: false
   log_every_n_epochs: 5

@@ -1,0 +1,9 @@
+defaults:
+  - ../base
+
+augmentation:
+  strong_style: true
+  fourier: true
+
+logging:
+  run_name: I_aug_combo

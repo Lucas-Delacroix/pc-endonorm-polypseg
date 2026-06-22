@@ -1,69 +1,70 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+DICE_SMOOTH = 1e-06
+STRUCTURE_SMOOTH = 1.0
+EDGE_WEIGHT = 5
+EDGE_KERNEL = 15
+EDGE_PADDING = 7
 
 class DiceLoss(nn.Module):
-    def __init__(self, smooth: float = 1e-6):
-        super().__init__()
-        self.smooth = smooth
 
-    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        pred = torch.sigmoid(pred)
-        pred = pred.contiguous().view(-1)
+    def forward(self, pred, target):
+        pred = torch.sigmoid(pred).contiguous().view(-1)
         target = target.contiguous().view(-1)
-
-        intersection = (pred * target).sum()
-        loss = 1 - (2.0 * intersection + self.smooth) / (
-            pred.sum() + target.sum() + self.smooth
-        )
-        return loss
-
-
-class BCEDiceLoss(nn.Module):
-    def __init__(self, bce_weight: float = 0.5, dice_weight: float = 0.5):
-        super().__init__()
-        self.bce_weight = bce_weight
-        self.dice_weight = dice_weight
-        self.bce = nn.BCEWithLogitsLoss()
-        self.dice = DiceLoss()
-
-    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        bce_loss = self.bce(pred, target)
-        dice_loss = self.dice(pred, target)
-        return self.bce_weight * bce_loss + self.dice_weight * dice_loss
-
+        overlap = (pred * target).sum()
+        score = (2.0 * overlap + DICE_SMOOTH) / (pred.sum() + target.sum() + DICE_SMOOTH)
+        return 1.0 - score
 
 class StructureLoss(nn.Module):
-    def __init__(self, smooth: float = 1.0):
+
+    def forward(self, pred, target):
+        edge = F.avg_pool2d(target, kernel_size=EDGE_KERNEL, stride=1, padding=EDGE_PADDING) - target
+        weight = 1.0 + EDGE_WEIGHT * torch.abs(edge)
+        bce = F.binary_cross_entropy_with_logits(pred, target, reduction='none')
+        bce = (weight * bce).sum(dim=(2, 3)) / weight.sum(dim=(2, 3))
+        prob = torch.sigmoid(pred)
+        overlap = (prob * target * weight).sum(dim=(2, 3))
+        union = ((prob + target) * weight).sum(dim=(2, 3))
+        wiou = 1.0 - (overlap + STRUCTURE_SMOOTH) / (union - overlap + STRUCTURE_SMOOTH)
+        return (bce + wiou).mean()
+
+class FocalTverskyLoss(nn.Module):
+
+    def __init__(self, alpha=0.7, beta=0.3, gamma=0.75):
         super().__init__()
-        self.smooth = smooth
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
 
-    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        weight = 1 + 5 * torch.abs(
-            F.avg_pool2d(target, kernel_size=15, stride=1, padding=7) - target
-        )
-        bce = F.binary_cross_entropy_with_logits(pred, target, reduction="none")
-        weighted_bce = (weight * bce).sum(dim=(2, 3)) / weight.sum(dim=(2, 3))
+    def forward(self, pred, target):
+        pred = torch.sigmoid(pred).contiguous().view(-1)
+        target = target.contiguous().view(-1)
+        tp = (pred * target).sum()
+        fp = (pred * (1.0 - target)).sum()
+        fn = ((1.0 - pred) * target).sum()
+        score = (tp + DICE_SMOOTH) / (tp + self.alpha * fp + self.beta * fn + DICE_SMOOTH)
+        return torch.pow(1.0 - score, self.gamma)
 
-        pred_sigmoid = torch.sigmoid(pred)
-        inter = (pred_sigmoid * target * weight).sum(dim=(2, 3))
-        union = ((pred_sigmoid + target) * weight).sum(dim=(2, 3))
-        weighted_iou = 1 - (inter + self.smooth) / (union - inter + self.smooth)
+class CombinedLoss(nn.Module):
 
-        loss = (weighted_bce + weighted_iou).mean()
-        return loss
+    def __init__(self, dice_weight=0.4, bce_weight=0.2, focal_tversky_weight=0.4, focal_tversky=None):
+        super().__init__()
+        self.dice_weight = dice_weight
+        self.bce_weight = bce_weight
+        self.focal_tversky_weight = focal_tversky_weight
+        self.dice = DiceLoss()
+        self.bce = nn.BCEWithLogitsLoss()
+        self.focal_tversky = FocalTverskyLoss(**focal_tversky or {})
 
+    def forward(self, pred, target):
+        return self.dice_weight * self.dice(pred, target) + self.bce_weight * self.bce(pred, target) + self.focal_tversky_weight * self.focal_tversky(pred, target)
 
-LOSSES = {
-    "bce_dice": BCEDiceLoss,
-    "dice": DiceLoss,
-    "structure": StructureLoss,
-}
-
-
-def get_loss(name: str, **kwargs) -> nn.Module:
-    assert name in LOSSES, (
-        f"Loss '{name}' não reconhecida. Opções: {list(LOSSES.keys())}"
-    )
-    return LOSSES[name](**kwargs)
+def build_loss(config):
+    if config == 'structure':
+        return StructureLoss()
+    config = dict(config)
+    name = config.pop('name')
+    if name == 'combined':
+        return CombinedLoss(**config)
+    raise ValueError(f'Unknown loss: {name}')

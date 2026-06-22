@@ -1,0 +1,26 @@
+defaults:
+  - ../base
+
+augmentation:
+  strong_style: true
+  fourier: true
+
+training:
+  optimizer: {name: adamw, lr: 1.0e-4, weight_decay: 1.0e-4}
+  loss:
+    name: combined
+    dice_weight: 0.4
+    bce_weight: 0.2
+    focal_tversky_weight: 0.4
+    focal_tversky: {alpha: 0.7, beta: 0.3, gamma: 0.75}
+  ema:
+    enabled: true
+    decay: 0.999
+  swa:
+    enabled: true
+    start_epoch_ratio: 0.75
+    lr: 5.0e-5
+    update_bn: true
+
+logging:
+  run_name: K_robust_full

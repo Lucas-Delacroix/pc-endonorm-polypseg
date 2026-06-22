@@ -1,0 +1,9 @@
+defaults:
+  - ../base
+
+augmentation:
+  strong_style: true
+  fourier: false
+
+logging:
+  run_name: G_aug_jitter

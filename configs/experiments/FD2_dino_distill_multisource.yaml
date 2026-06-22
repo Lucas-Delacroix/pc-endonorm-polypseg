@@ -1,0 +1,48 @@
+defaults:
+  - ../base
+
+paths:
+  results: results
+
+training:
+  distillation:
+    enabled: true
+    model_name: dinov2_vits14
+    teacher_image_size: 350
+    weight: 1.0
+
+dataset:
+  split:
+    mode: random
+    train_ratio: 0.9
+    val_ratio: 0.1
+    seed: 42
+  train:
+    sources:
+      - name: kvasir
+        images_dir: data/raw/kvasir-seg/images
+        masks_dir: data/raw/kvasir-seg/masks
+        split: train
+      - name: cvc_clinicdb
+        images_dir: data/raw/cvc-clinicdb/images
+        masks_dir: data/raw/cvc-clinicdb/masks
+        split: train
+  val:
+    source:
+      name: kvasir_val
+      images_dir: data/raw/kvasir-seg/images
+      masks_dir: data/raw/kvasir-seg/masks
+      split: val
+  test:
+    sources:
+      - name: cvc_colondb
+        images_dir: data/raw/cvc-colondb/images
+        masks_dir: data/raw/cvc-colondb/masks
+        split: all
+      - name: etis_larib
+        images_dir: data/raw/etis-larib/images
+        masks_dir: data/raw/etis-larib/masks
+        split: all
+
+logging:
+  run_name: FD2_dino_distill_multisource
